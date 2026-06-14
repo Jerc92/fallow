@@ -246,6 +246,8 @@ For security review loops, see the [Security agent verification recipe](docs/sec
 
 Run `fallow impact` to see what fallow has done for you: how many issues it is surfacing, the trend since your last recorded run, and how many commits its pre-commit gate caught before they shipped. Run `fallow impact --all` to roll every tracked project into one cross-repo view. It is opt-in (`fallow impact enable`) and entirely local: history lives in your user config directory (never written into the repo, so nothing to gitignore) and is never uploaded.
 
+Run `fallow viz` to generate an interactive visualization of your codebase: a single self-contained HTML file (no server) with a treemap of files sized by bytes and colored by status, plus a force-directed import graph with directory and import-community clustering. Both views support drill-down, search, filters, and dark mode. It opens in your browser by default (`--no-open` to skip, `--out <path>` to choose the file). For piping into other tools, `--viz-format dot` and `--viz-format mermaid` emit the graph as text.
+
 Product telemetry for improving agent, CI, MCP, and editor workflows is off by default. Run `fallow telemetry inspect --example` to see the payload, or `FALLOW_TELEMETRY=inspect fallow audit --format json --quiet` to inspect a real run without sending it. Run `fallow telemetry enable` only when you want to help improve these integrations. See [Telemetry](docs/telemetry.md).
 
 ## Why teams using AI need Fallow

@@ -3284,17 +3284,24 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
             output: viz_output,
             no_open,
             viz_format,
-        } => viz::run_viz(&viz::VizOptions {
-            root,
-            config_path: &dispatch.cli.config,
-            no_cache: dispatch.cli.no_cache,
-            threads: dispatch.threads,
-            quiet,
-            production: dispatch.cli.production,
-            output_path: viz_output.as_deref(),
-            no_open,
-            format: viz_format,
-        }),
+        } => {
+            let production =
+                match dispatch.production_for(fallow_config::ProductionAnalysis::DeadCode) {
+                    Ok(production) => production,
+                    Err(code) => return code,
+                };
+            viz::run_viz(&viz::VizOptions {
+                root,
+                config_path: &cli.config,
+                no_cache: cli.no_cache,
+                threads: dispatch.threads,
+                quiet,
+                production,
+                output_path: viz_output.as_deref(),
+                no_open,
+                format: viz_format,
+            })
+        }
     }
 }
 
