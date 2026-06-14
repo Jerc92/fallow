@@ -495,6 +495,7 @@ fn build_shared_parse_data(
         files: None,
         script_used_packages: script_used_packages.clone(),
         file_hashes: rustc_hash::FxHashMap::default(),
+        project: None,
     });
     Some(crate::health::SharedParseData {
         files,

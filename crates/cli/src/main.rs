@@ -58,6 +58,7 @@ mod telemetry;
 mod update_check;
 mod validate;
 mod vital_signs;
+mod viz;
 mod watch;
 
 use check::{CheckOptions, IssueFilters, TraceOptions};
@@ -111,6 +112,7 @@ Project inspection:
   workspaces     Show monorepo workspace discovery diagnostics
   explain        Explain one issue type without running analysis
   impact         Show what fallow has done for you (opt-in, local-only)
+  viz            Generate an interactive HTML visualization of the codebase
 
 Setup and configuration:
   init              Create a fallow config, optionally with a Git hook
@@ -1259,6 +1261,21 @@ enum Command {
         /// "unchanged" when nothing to remove.
         #[arg(long)]
         uninstall: bool,
+    },
+
+    /// Generate an interactive HTML visualization of the codebase
+    Viz {
+        /// Output file path (default: fallow-viz.html in project root)
+        #[arg(long = "out", value_name = "PATH")]
+        output: Option<PathBuf>,
+
+        /// Don't open the output file in the browser
+        #[arg(long)]
+        no_open: bool,
+
+        /// Visualization output format
+        #[arg(long = "viz-format", default_value = "html")]
+        viz_format: viz::VizFormat,
     },
 }
 
@@ -3263,6 +3280,21 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
         setup_hooks @ Command::SetupHooks { .. } => {
             dispatch_setup_hooks_command(&setup_hooks, dispatch)
         }
+        Command::Viz {
+            output: viz_output,
+            no_open,
+            viz_format,
+        } => viz::run_viz(&viz::VizOptions {
+            root,
+            config_path: &dispatch.cli.config,
+            no_cache: dispatch.cli.no_cache,
+            threads: dispatch.threads,
+            quiet,
+            production: dispatch.cli.production,
+            output_path: viz_output.as_deref(),
+            no_open,
+            format: viz_format,
+        }),
     }
 }
 
@@ -3831,9 +3863,9 @@ fn telemetry_workflow_for_command(
         Some(Command::Security { .. }) => telemetry::Workflow::Security,
         Some(Command::Fix { .. }) => telemetry::Workflow::Fix,
         Some(Command::Explain { .. }) => telemetry::Workflow::Explain,
-        Some(Command::List { .. } | Command::Workspaces | Command::Schema) => {
-            telemetry::Workflow::ProjectInventory
-        }
+        Some(
+            Command::List { .. } | Command::Workspaces | Command::Schema | Command::Viz { .. },
+        ) => telemetry::Workflow::ProjectInventory,
         Some(Command::License { .. }) => telemetry::Workflow::License,
         Some(
             Command::Init { .. }

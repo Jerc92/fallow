@@ -165,6 +165,10 @@ pub struct AnalysisOutput {
     /// the same hash as a fresh parse. Roughly 8 bytes per file (negligible
     /// memory cost even on 100k-file projects).
     pub file_hashes: rustc_hash::FxHashMap<std::path::PathBuf, u64>,
+    /// Project state (discovered files, path-to-id index, workspaces), retained
+    /// when the graph is retained. Consumed by `fallow viz` to map files to
+    /// workspaces and resolve paths to file ids for the visualization.
+    pub project: Option<project::ProjectState>,
 }
 
 /// Update cache: write freshly parsed modules and refresh stale mtime/size entries.
@@ -594,6 +598,7 @@ pub fn analyze_with_parse_result(
         files: None,
         script_used_packages: plugin_result.script_used_packages.clone(),
         file_hashes,
+        project: None,
     })
 }
 
@@ -744,6 +749,7 @@ fn analyze_full(
         },
         script_used_packages: plugin_result.script_used_packages,
         file_hashes,
+        project: if retain { Some(project) } else { None },
     })
 }
 

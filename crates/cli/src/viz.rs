@@ -99,6 +99,10 @@ struct VizWorkspace {
 
 // ── Entry point ─────────────────────────────────────────────────
 
+#[expect(
+    deprecated,
+    reason = "ADR-008 deprecates fallow_core::analyze* externally; the CLI still uses the workspace path dependency"
+)]
 pub fn run_viz(opts: &VizOptions<'_>) -> ExitCode {
     let start = Instant::now();
 
@@ -115,20 +119,20 @@ pub fn run_viz(opts: &VizOptions<'_>) -> ExitCode {
         Err(code) => return code,
     };
 
-    // Always use trace mode to retain the graph and project state
-    let output = match fallow_core::analyze_with_trace(&config) {
+    // Retain the graph and project state for the visualization.
+    let output = match fallow_core::analyze_retaining_modules(&config, false, true) {
         Ok(o) => o,
         Err(e) => {
-            return emit_error(&format!("Analysis error: {e}"), 2, &OutputFormat::Human);
+            return emit_error(&format!("Analysis error: {e}"), 2, OutputFormat::Human);
         }
     };
 
     let Some(graph) = output.graph else {
-        return emit_error("Graph not available", 2, &OutputFormat::Human);
+        return emit_error("Graph not available", 2, OutputFormat::Human);
     };
 
     let Some(project) = output.project else {
-        return emit_error("Project state not available", 2, &OutputFormat::Human);
+        return emit_error("Project state not available", 2, OutputFormat::Human);
     };
 
     let data = build_viz_data(&graph, &project, &output.results, &config.root);
@@ -163,7 +167,7 @@ fn build_viz_data(
     let unused_file_paths: FxHashSet<&Path> = results
         .unused_files
         .iter()
-        .map(|f| f.path.as_path())
+        .map(|f| f.file.path.as_path())
         .collect();
 
     // Collect unused export names per file
@@ -171,15 +175,15 @@ fn build_viz_data(
         rustc_hash::FxHashMap::default();
     for export in &results.unused_exports {
         unused_exports_by_file
-            .entry(export.path.as_path())
+            .entry(export.export.path.as_path())
             .or_default()
-            .push(export.export_name.clone());
+            .push(export.export.export_name.clone());
     }
     for export in &results.unused_types {
         unused_exports_by_file
-            .entry(export.path.as_path())
+            .entry(export.export.path.as_path())
             .or_default()
-            .push(export.export_name.clone());
+            .push(export.export.export_name.clone());
     }
 
     // Build file entries
@@ -199,7 +203,7 @@ fn build_viz_data(
                 .to_string_lossy()
                 .into_owned();
 
-            let is_entry = idx < graph.modules.len() && graph.modules[idx].is_entry_point;
+            let is_entry = idx < graph.modules.len() && graph.modules[idx].is_entry_point();
             let export_count = if idx < graph.modules.len() {
                 graph.modules[idx].exports.len().min(u16::MAX as usize) as u16
             } else {
@@ -265,11 +269,12 @@ fn build_viz_data(
         .iter()
         .filter_map(|cd| {
             let ids: Vec<u32> = cd
+                .cycle
                 .files
                 .iter()
                 .filter_map(|p| project.id_for_path(p).map(|id| id.0))
                 .collect();
-            if ids.len() == cd.files.len() {
+            if ids.len() == cd.cycle.files.len() {
                 Some(ids)
             } else {
                 None
@@ -333,7 +338,7 @@ fn write_html(opts: &VizOptions<'_>, data: &VizData, elapsed: std::time::Duratio
             return emit_error(
                 &format!("Failed to serialize viz data: {e}"),
                 2,
-                &OutputFormat::Human,
+                OutputFormat::Human,
             );
         }
     };
@@ -368,7 +373,7 @@ fn write_html(opts: &VizOptions<'_>, data: &VizData, elapsed: std::time::Duratio
         return emit_error(
             &format!("Failed to write HTML: {e}"),
             2,
-            &OutputFormat::Human,
+            OutputFormat::Human,
         );
     }
 
