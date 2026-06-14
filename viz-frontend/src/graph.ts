@@ -762,7 +762,7 @@ export const showGraphTooltip = (
 
   // Impact info for unused files
   if (file.status === "unused" && file.importer_count === 0) {
-    tip.appendChild(el("div", "tip-details", "0 importers — safe to delete", "color:#10B981;font-weight:600"));
+    tip.appendChild(el("div", "tip-details", "0 importers, safe to delete", "color:#10B981;font-weight:600"));
   }
 
   tip.style.backgroundColor = theme.tooltipBg;

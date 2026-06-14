@@ -355,7 +355,7 @@ fn write_html(opts: &VizOptions<'_>, data: &VizData, elapsed: std::time::Duratio
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fallow — {title}</title>
+<title>fallow viz: {title}</title>
 <style>{css}</style>
 </head>
 <body>

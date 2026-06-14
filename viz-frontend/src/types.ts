@@ -50,7 +50,7 @@ export interface TreeNode {
   path: string;
   size: number;
   children: TreeNode[];
-  /** Index into VizData.files — only set for leaf (file) nodes */
+  /** Index into VizData.files, only set for leaf (file) nodes */
   fileIndex: number | null;
 }
 

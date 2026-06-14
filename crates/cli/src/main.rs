@@ -4992,6 +4992,7 @@ mod tests {
             "  workspaces",
             "  explain",
             "  impact",
+            "  viz",
             "Setup and configuration:",
             "  init",
             "  migrate",

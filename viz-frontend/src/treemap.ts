@@ -275,7 +275,7 @@ const renderCell = (state: AppState, cell: LayoutNode, depth: number): void => {
   const isSearchMatch = state.searchQuery !== "" && state.searchResults.has(layoutIndex);
 
   if (isFile) {
-    // Leaf file — fill with status color
+    // Leaf file, fill with status color
     const file = data.files[cell.node.fileIndex!];
     ctx.fillStyle = theme.statusColors[file.status];
     ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
@@ -306,13 +306,13 @@ const renderCell = (state: AppState, cell: LayoutNode, depth: number): void => {
       }
     }
   } else if (hasChildren) {
-    // Directory with children — render as container with header + nested children
+    // Directory with children, render as container with header + nested children
     const tooNarrow = cell.w < 30 || cell.h < 30;
     const showHeader = !tooNarrow && cell.w > 50 && cell.h > DIR_HEADER_HEIGHT + 10;
     const headerH = showHeader ? DIR_HEADER_HEIGHT : 0;
 
     if (tooNarrow) {
-      // Cell too small to nest children — show dominant status color as summary
+      // Cell too small to nest children, show dominant status color as summary
       const dominantColor = getWorstColor(cell.node, data, theme);
       ctx.fillStyle = dominantColor;
       ctx.fillRect(cell.x, cell.y, cell.w, cell.h);

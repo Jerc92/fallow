@@ -72,7 +72,7 @@ export const showTooltip = (
       tip.appendChild(createEl("div", "tip-details", details.join(" · ")));
     }
 
-    // Show actual unused export names — the actionable part
+    // Show actual unused export names, the actionable part
     if (file.unused_exports && file.unused_exports.length > 0) {
       const maxShow = 8;
       const names = file.unused_exports.slice(0, maxShow);
@@ -90,7 +90,7 @@ export const showTooltip = (
     }
   } else {
     tip.appendChild(
-      createEl("div", "tip-status", "Directory — click to expand", `color:${theme.textSecondary}`),
+      createEl("div", "tip-status", "Directory, click to expand", `color:${theme.textSecondary}`),
     );
   }
 

@@ -161,7 +161,7 @@ export const setupInteractions = (
     } else if (e.key === "Escape") {
       if (state.activeView === "graph") {
         if (!graphGoBack(state)) {
-          // Nothing to go back from — reset zoom/pan
+          // Nothing to go back from, reset zoom/pan
           state.graphZoom = 1;
           state.graphPan = { x: 0, y: 0 };
           renderGraph(state);
