@@ -362,6 +362,17 @@ export const initGraphNodes = (state: AppState): void => {
 
   const zoomBehavior = zoom<HTMLCanvasElement, unknown>()
     .scaleExtent([0.1, 6])
+    .filter((event: MouseEvent | WheelEvent) => {
+      // Wheel always zooms. A primary-button press that lands on a node is
+      // reserved for node dragging (handled in interactions.ts), so pan only
+      // engages on empty space or with a non-primary button.
+      if (event.type === "wheel") return !event.ctrlKey;
+      if ((event as MouseEvent).button !== 0) return true;
+      const rect = canvas.getBoundingClientRect();
+      const cx = (event as MouseEvent).clientX - rect.left;
+      const cy = (event as MouseEvent).clientY - rect.top;
+      return graphHitTest(state, cx, cy) === null;
+    })
     .on("zoom", (event: D3ZoomEvent<HTMLCanvasElement, unknown>) => {
       gvs.transform = { x: event.transform.x, y: event.transform.y, k: event.transform.k };
       renderGraph(state);
@@ -638,7 +649,6 @@ export const setGraphFilter = (state: AppState, filter: GraphFilter): void => {
   renderGraph(state);
 };
 
-export const getGraphFilter = (state: AppState): GraphFilter => getGVS(state).filter;
 
 export const setClusterMode = (state: AppState, mode: ClusterMode): void => {
   const gvs = getGVS(state);
@@ -648,7 +658,6 @@ export const setClusterMode = (state: AppState, mode: ClusterMode): void => {
   initGraphNodes(state);
 };
 
-export const getClusterMode = (state: AppState): ClusterMode => getGVS(state).clusterMode;
 
 // ── Hit testing ─────────────────────────────────────────────────
 
@@ -695,12 +704,20 @@ export const graphDragStart = (state: AppState, nodeIdx: number): void => {
   }
 };
 
-export const graphDrag = (state: AppState, gx: number, gy: number): void => {
+export const graphDrag = (state: AppState, canvasX: number, canvasY: number): void => {
   const gvs = getGVS(state);
   if (gvs.draggedNode === null) return;
   const node = gvs.fileNodes[gvs.draggedNode];
+  // Convert canvas coordinates to graph space using the active zoom transform
+  // (same inversion as graphHitTest), so the node tracks the cursor at any zoom.
+  const gx = (canvasX - gvs.transform.x) / gvs.transform.k;
+  const gy = (canvasY - gvs.transform.y) / gvs.transform.k;
   node.fx = gx;
   node.fy = gy;
+  // Also move x/y directly so the explicit re-render tracks the cursor without
+  // waiting for the next simulation tick (the tick would copy fx -> x anyway).
+  node.x = gx;
+  node.y = gy;
 };
 
 export const graphDragEnd = (state: AppState): void => {
@@ -715,7 +732,6 @@ export const graphDragEnd = (state: AppState): void => {
   }
 };
 
-export const zoomToCluster = (_state: AppState, _groupName: string): void => {};
 
 // ── Tooltip ─────────────────────────────────────────────────────
 

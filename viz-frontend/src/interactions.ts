@@ -1,6 +1,16 @@
 import type { AppState } from "./state";
 import { renderTreemap } from "./treemap";
-import { renderGraph, graphHitTest, showGraphTooltip, handleGraphHover, handleGraphClick, graphGoBack } from "./graph";
+import {
+  renderGraph,
+  graphHitTest,
+  showGraphTooltip,
+  handleGraphHover,
+  handleGraphClick,
+  graphGoBack,
+  graphDragStart,
+  graphDrag,
+  graphDragEnd,
+} from "./graph";
 import { showTooltip, hideTooltip } from "./tooltip";
 import { toggleDarkMode } from "./state";
 
@@ -79,8 +89,37 @@ export const setupInteractions = (
 ): void => {
   const { canvas } = state;
 
+  // ── Graph node dragging ─────────────────────────────────────
+  // d3-zoom owns canvas pan; its filter (graph.ts) yields the press to us when
+  // it lands on a node, so node drag and background pan never conflict.
+  let draggingNode = false;
+  canvas.addEventListener("mousedown", (e) => {
+    if (state.activeView !== "graph" || e.button !== 0) return;
+    const { x, y } = getCanvasCoords(state, e);
+    const idx = graphHitTest(state, x, y);
+    if (idx !== null) {
+      graphDragStart(state, idx);
+      draggingNode = true;
+      canvas.style.cursor = "grabbing";
+    }
+  });
+  window.addEventListener("mouseup", () => {
+    if (draggingNode) {
+      graphDragEnd(state);
+      draggingNode = false;
+      canvas.style.cursor = "grab";
+    }
+  });
+
   // ── Mouse move ──────────────────────────────────────────────
   canvas.addEventListener("mousemove", (e) => {
+    if (draggingNode) {
+      const { x, y } = getCanvasCoords(state, e);
+      graphDrag(state, x, y);
+      renderGraph(state);
+      return;
+    }
+
     const { x, y } = getCanvasCoords(state, e);
 
     if (state.activeView === "treemap") {
