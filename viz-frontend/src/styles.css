@@ -282,3 +282,28 @@ body {
   margin-top: 4px;
   opacity: 0.7;
 }
+
+/* ── Keyboard focus visibility ─────────────────────────────── */
+
+#fallow-app button:focus-visible,
+.view-tab:focus-visible,
+.filter-btn:focus-visible,
+#fallow-darkmode:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: 2px;
+}
+
+#fallow-canvas:focus-visible {
+  outline: 2px solid #3B82F6;
+  outline-offset: -2px;
+}
+
+/* ── Respect reduced-motion preference ─────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -237,6 +237,7 @@ export const setupInteractions = (
     breadcrumbEl.style.backgroundColor = state.theme.breadcrumbBg;
     breadcrumbEl.style.color = state.theme.breadcrumbText;
     darkModeBtn.textContent = state.darkMode ? "☀" : "☾";
+    darkModeBtn.setAttribute("aria-pressed", String(state.darkMode));
     render(state);
   });
 

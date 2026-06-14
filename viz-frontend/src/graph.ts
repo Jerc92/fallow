@@ -54,6 +54,12 @@ const FONT_GROUP = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", san
 const NODE_R_MIN = 3;
 const NODE_R_MAX = 12;
 
+// Respect the OS "reduce motion" setting: skip the force-simulation reheat so a
+// drag repositions the node without springing its neighbors around.
+const prefersReducedMotion = (): boolean =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 // ── Opacity by status and filter ────────────────────────────────
 
 const STATUS_OPACITY: Record<GraphFilter, Record<VizFileStatus, number>> = {
@@ -698,8 +704,10 @@ export const graphDragStart = (state: AppState, nodeIdx: number): void => {
   const node = gvs.fileNodes[nodeIdx];
   node.fx = node.x;
   node.fy = node.y;
-  // Reheat simulation
-  if (gvs.simulation) {
+  // Reheat simulation so neighbors settle around the dragged node, unless the
+  // user asked for reduced motion (then the node still tracks the cursor via
+  // fx/fy + the explicit re-render in interactions.ts, with no spring).
+  if (gvs.simulation && !prefersReducedMotion()) {
     gvs.simulation.alphaTarget(0.3).restart();
   }
 };

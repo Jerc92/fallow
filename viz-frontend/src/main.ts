@@ -63,17 +63,21 @@ const init = (): void => {
   // View toggle tabs
   const viewTabs = document.createElement("div");
   viewTabs.id = "fallow-view-tabs";
+  viewTabs.setAttribute("role", "group");
+  viewTabs.setAttribute("aria-label", "Visualization view");
 
   const treemapTab = document.createElement("button");
   treemapTab.className = "view-tab active";
   treemapTab.textContent = "Treemap";
   treemapTab.dataset.view = "treemap";
+  treemapTab.setAttribute("aria-pressed", "true");
   viewTabs.appendChild(treemapTab);
 
   const graphTab = document.createElement("button");
   graphTab.className = "view-tab";
   graphTab.textContent = "Graph";
   graphTab.dataset.view = "graph";
+  graphTab.setAttribute("aria-pressed", "false");
   viewTabs.appendChild(graphTab);
 
   controls.appendChild(viewTabs);
@@ -82,6 +86,8 @@ const init = (): void => {
   const filterGroup = document.createElement("div");
   filterGroup.id = "fallow-graph-filters";
   filterGroup.style.display = "none";
+  filterGroup.setAttribute("role", "group");
+  filterGroup.setAttribute("aria-label", "Filter graph nodes");
 
   const filterButtons: Array<{ label: string; value: GraphFilter }> = [
     { label: "All", value: "all" },
@@ -91,12 +97,16 @@ const init = (): void => {
 
   for (const fb of filterButtons) {
     const btn = document.createElement("button");
-    btn.className = `filter-btn${fb.value === "all" ? " active" : ""}`;
+    const isActive = fb.value === "all";
+    btn.className = `filter-btn${isActive ? " active" : ""}`;
     btn.textContent = fb.label;
     btn.dataset.filter = fb.value;
+    btn.setAttribute("aria-pressed", String(isActive));
     btn.addEventListener("click", () => {
       for (const b of filterGroup.querySelectorAll(".filter-btn")) {
-        b.classList.toggle("active", (b as HTMLElement).dataset.filter === fb.value);
+        const on = (b as HTMLElement).dataset.filter === fb.value;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
       }
       setGraphFilter(state!, fb.value);
     });
@@ -108,6 +118,8 @@ const init = (): void => {
   const clusterGroup = document.createElement("div");
   clusterGroup.id = "fallow-cluster-mode";
   clusterGroup.style.display = "none";
+  clusterGroup.setAttribute("role", "group");
+  clusterGroup.setAttribute("aria-label", "Graph clustering mode");
 
   const clusterLabel = document.createElement("span");
   clusterLabel.className = "cluster-label";
@@ -121,12 +133,16 @@ const init = (): void => {
 
   for (const cb of clusterButtons) {
     const btn = document.createElement("button");
-    btn.className = `filter-btn${cb.value === "directory" ? " active" : ""}`;
+    const isActive = cb.value === "directory";
+    btn.className = `filter-btn${isActive ? " active" : ""}`;
     btn.textContent = cb.label;
     btn.dataset.cluster = cb.value;
+    btn.setAttribute("aria-pressed", String(isActive));
     btn.addEventListener("click", () => {
       for (const b of clusterGroup.querySelectorAll(".filter-btn")) {
-        b.classList.toggle("active", (b as HTMLElement).dataset.cluster === cb.value);
+        const on = (b as HTMLElement).dataset.cluster === cb.value;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", String(on));
       }
       setClusterMode(state!, cb.value);
     });
@@ -140,6 +156,14 @@ const init = (): void => {
 
   const canvas = document.createElement("canvas");
   canvas.id = "fallow-canvas";
+  canvas.tabIndex = 0;
+  canvas.setAttribute("role", "img");
+  canvas.setAttribute(
+    "aria-label",
+    `Interactive visualization of ${data.summary.total_files} files. ` +
+      "Use the Treemap and Graph buttons to switch views, the search box to find files, " +
+      "and the number keys 1-3 to set graph focus depth.",
+  );
   app.appendChild(canvas);
 
   const state = createState(data, canvas);
@@ -161,11 +185,15 @@ const init = (): void => {
   darkModeBtn.id = "fallow-darkmode";
   darkModeBtn.textContent = state.darkMode ? "☀" : "☾";
   darkModeBtn.title = "Toggle dark mode";
+  darkModeBtn.setAttribute("aria-label", "Toggle dark mode");
+  darkModeBtn.setAttribute("aria-pressed", String(state.darkMode));
   controls.appendChild(darkModeBtn);
 
   // Legend
   const legend = document.createElement("div");
   legend.id = "fallow-legend";
+  legend.setAttribute("role", "list");
+  legend.setAttribute("aria-label", "Status legend");
   const legendItems: Array<[string, string]> = [
     ["Clean", state.theme.statusColors.clean],
     ["Entry point", state.theme.statusColors.entryPoint],
@@ -175,10 +203,12 @@ const init = (): void => {
   for (const [label, color] of legendItems) {
     const item = document.createElement("span");
     item.className = "legend-item";
+    item.setAttribute("role", "listitem");
 
     const swatch = document.createElement("span");
     swatch.className = "legend-swatch";
     swatch.style.backgroundColor = color;
+    swatch.setAttribute("aria-hidden", "true");
     item.appendChild(swatch);
 
     const text = document.createElement("span");
@@ -196,6 +226,8 @@ const init = (): void => {
     state.activeView = view;
     treemapTab.classList.toggle("active", view === "treemap");
     graphTab.classList.toggle("active", view === "graph");
+    treemapTab.setAttribute("aria-pressed", String(view === "treemap"));
+    graphTab.setAttribute("aria-pressed", String(view === "graph"));
     breadcrumbEl.style.display = view === "treemap" ? "" : "none";
     filterGroup.style.display = view === "graph" ? "" : "none";
     clusterGroup.style.display = view === "graph" ? "" : "none";

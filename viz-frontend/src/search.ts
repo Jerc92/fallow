@@ -30,6 +30,7 @@ export const setupSearch = (state: AppState): HTMLInputElement => {
   input.id = "fallow-search";
   input.placeholder = "Search files… (/)";
   input.setAttribute("autocomplete", "off");
+  input.setAttribute("aria-label", "Search files");
 
   let debounceTimer: ReturnType<typeof setTimeout>;
   input.addEventListener("input", () => {
