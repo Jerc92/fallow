@@ -477,3 +477,85 @@ fn generate_mermaid(data: &VizData) -> String {
 
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file(path: &str, status: VizFileStatus) -> VizFile {
+        VizFile {
+            path: path.to_string(),
+            size: 100,
+            status,
+            export_count: 0,
+            unused_export_count: 0,
+            is_entry: false,
+            importer_count: 0,
+            import_count: 0,
+            workspace: String::new(),
+            unused_exports: Vec::new(),
+        }
+    }
+
+    fn sample_data() -> VizData {
+        VizData {
+            root: "proj".to_string(),
+            files: vec![
+                file("src/index.ts", VizFileStatus::EntryPoint),
+                file("src/dead.ts", VizFileStatus::Unused),
+                file("src/lib.ts", VizFileStatus::Clean),
+            ],
+            edges: vec![[0, 2]],
+            summary: VizSummary {
+                total_files: 3,
+                total_size: 300,
+                unused_files: 1,
+                unused_exports: 0,
+                unused_types: 0,
+                unused_deps: 0,
+                unresolved_imports: 0,
+                circular_deps: 0,
+            },
+            workspaces: Vec::new(),
+            cycles: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn html_escape_escapes_injection_characters() {
+        assert_eq!(
+            html_escape(r#"<script>"a"&'b'</script>"#),
+            "&lt;script&gt;&quot;a&quot;&amp;'b'&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn generate_dot_emits_nodes_edges_and_status_colors() {
+        let dot = generate_dot(&sample_data());
+        assert!(dot.starts_with("digraph fallow {"));
+        // Entry node green, unused node red.
+        assert!(dot.contains("n0 [label=\"src/index.ts\", fillcolor=\"#10B981\""));
+        assert!(dot.contains("n1 [label=\"src/dead.ts\", fillcolor=\"#EF4444\""));
+        assert!(dot.contains("n0 -> n2;"));
+        assert!(dot.trim_end().ends_with('}'));
+    }
+
+    #[test]
+    fn generate_dot_escapes_quotes_and_backslashes_in_paths() {
+        let mut data = sample_data();
+        data.files[0].path = r#"a\b"c.ts"#.to_string();
+        let dot = generate_dot(&data);
+        assert!(dot.contains(r#"label="a\\b\"c.ts""#));
+    }
+
+    #[test]
+    fn generate_mermaid_emits_graph_nodes_edges_and_styles() {
+        let mermaid = generate_mermaid(&sample_data());
+        assert!(mermaid.starts_with("graph LR\n"));
+        assert!(mermaid.contains("n0[\"src/index.ts\"]"));
+        assert!(mermaid.contains("n0 --> n2"));
+        // Clean files carry no style line; unused + entry do.
+        assert!(mermaid.contains("style n1 fill:#EF4444"));
+        assert!(mermaid.contains("style n0 fill:#10B981"));
+    }
+}

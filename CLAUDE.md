@@ -19,7 +19,8 @@ crates/
     plugins/    -- Plugin system + tooling.rs (general tooling dependency detection)
     duplicates/ -- Clone detection (families, normalize, tokenize)
   cli/      -- CLI binary, split into per-command modules
-    audit.rs, check.rs, dupes.rs, health/, watch.rs, fix/, init.rs, list.rs, schema.rs, validate.rs, regression/, impact.rs, security.rs
+    audit.rs, check.rs, dupes.rs, health/, watch.rs, fix/, init.rs, list.rs, schema.rs, validate.rs, regression/, impact.rs, security.rs, viz.rs
+viz-frontend/  -- TS source (rolldown) for the `fallow viz` interactive HTML; bundles to crates/cli/viz-assets/
     license/    -- `fallow license {activate, status, refresh, deactivate}` with offline JWT verify plus live trial / refresh flows
     coverage/   -- `fallow coverage setup` resumable first-run state machine for runtime coverage
     report/     -- Output formatting (mod.rs dispatch, human/, json.rs, sarif.rs, compact.rs, markdown.rs)
