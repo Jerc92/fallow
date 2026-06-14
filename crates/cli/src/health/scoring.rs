@@ -2411,6 +2411,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2443,6 +2444,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2517,6 +2519,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2574,6 +2577,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2672,6 +2676,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2767,6 +2772,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2849,6 +2855,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -2950,6 +2957,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3066,6 +3074,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3217,6 +3226,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3353,6 +3363,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3412,6 +3423,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3473,6 +3485,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3568,6 +3581,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
@@ -3629,6 +3643,7 @@ mod tests {
             files: None,
             script_used_packages: rustc_hash::FxHashSet::default(),
             file_hashes: rustc_hash::FxHashMap::default(),
+            project: None,
         };
 
         let result = compute_file_scores(
