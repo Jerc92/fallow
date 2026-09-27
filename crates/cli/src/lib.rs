@@ -2193,7 +2193,7 @@ enum LicenseCli {
     /// missing, or the cloud reports it as too stale to exchange, the request
     /// is retried with a full-access API key.
     Refresh {
-        /// Fallow cloud API key (bearer token) used when the stored license
+        /// Fallow Cloud API key (bearer token) used when the stored license
         /// JWT cannot be refreshed.
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
@@ -2269,15 +2269,15 @@ enum CoverageCli {
         #[arg(long, value_name = "PATH", conflicts_with = "cloud")]
         runtime_coverage: Option<PathBuf>,
 
-        /// Fetch latest runtime facts from fallow cloud for the selected repo.
+        /// Fetch latest runtime facts from Fallow Cloud for the selected repo.
         #[arg(long, visible_alias = "runtime-coverage-cloud")]
         cloud: bool,
 
-        /// Fallow cloud API key. Precedence: this flag > $FALLOW_API_KEY.
+        /// Fallow Cloud API key. Precedence: this flag > $FALLOW_API_KEY.
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         #[arg(long, value_name = "URL")]
         api_endpoint: Option<String>,
 
@@ -2337,18 +2337,18 @@ enum CoverageCli {
         #[arg(long)]
         debug_unmatched: bool,
     },
-    /// Upload a static function inventory to fallow cloud. Needs a fallow
+    /// Upload a static function inventory to Fallow Cloud. Needs a fallow
     /// cloud API key. Unlocks the `untracked` filter on the dashboard by
     /// pairing runtime coverage data with the AST view of "every function
     /// that exists". See <https://docs.fallow.tools/analysis/runtime-coverage>.
     ///
-    /// This command makes network calls to fallow cloud. `fallow dead-code`
+    /// This command makes network calls to Fallow Cloud. `fallow dead-code`
     /// stays offline.
     ///
     /// Exit codes: 0 ok · 7 network · 10 validation · 11 payload too large
     /// · 12 auth rejected · 13 server error.
     UploadInventory {
-        /// Fallow cloud API key (bearer token).
+        /// Fallow Cloud API key (bearer token).
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
         /// <https://fallow.cloud/settings#api-keys>.
@@ -2359,7 +2359,7 @@ enum CoverageCli {
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         ///
         /// Useful for staging and on-premise deployments. Also respects
         /// $FALLOW_API_URL when this flag is not set.
@@ -2427,7 +2427,7 @@ enum CoverageCli {
         #[arg(long)]
         ignore_upload_errors: bool,
     },
-    /// Upload JavaScript source maps to fallow cloud for bundled runtime coverage.
+    /// Upload JavaScript source maps to Fallow Cloud for bundled runtime coverage.
     ///
     /// Scans a build output directory for `.map` files and uploads them under
     /// the selected repo + git SHA. The production beacon reports bundled
@@ -2467,7 +2467,7 @@ enum CoverageCli {
         #[arg(long, value_name = "SHA")]
         git_sha: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         #[arg(long, value_name = "URL")]
         endpoint: Option<String>,
 
@@ -2490,14 +2490,14 @@ enum CoverageCli {
         #[arg(long)]
         fail_fast: bool,
     },
-    /// Upload static dead-code findings to fallow cloud for the source-evidence viewer.
+    /// Upload static dead-code findings to Fallow Cloud for the source-evidence viewer.
     ///
     /// Runs fallow's static analysis and uploads the `unused_export` and
     /// `dead_file` verdicts under the selected repo + git SHA. The cloud
     /// overlays them on the source view alongside the runtime coverage overlay.
     /// Findings are replace-by-SHA: each run sends the complete set for the SHA.
     UploadStaticFindings {
-        /// Fallow cloud API key (bearer token).
+        /// Fallow Cloud API key (bearer token).
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
         /// <https://fallow.cloud/settings#api-keys>. This must be a live API
@@ -2509,7 +2509,7 @@ enum CoverageCli {
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         ///
         /// Useful for staging and on-premise deployments. Also respects
         /// $FALLOW_API_URL when this flag is not set.
