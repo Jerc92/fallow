@@ -7,7 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`circularDependencies.ignoreLazyImports` skips lazy edges in cycle
+  detection.** The option is off by default. When it is on, an import edge
+  that loads its target only on demand or on another thread does not take
+  part in cycle detection. Examples are an `import()` inside a function, a
+  template `import()`, a lazy `import.meta.glob` and a worker URL. An edge
+  that also has a static import stays. Fallow removes the lazy edges before
+  it counts the cycles of a group, so lazy cycles can no longer fill the
+  limit of 20 cycles and hide a static cycle.
+
+  ```json
+  { "circularDependencies": { "ignoreLazyImports": true } }
+  ```
+
+  A top-level `await import('./x')` now loads eagerly in the module graph,
+  because the module waits for the target before it continues. This also
+  counts the target in the startup import weight. An `await import()` at the
+  top level of a Vue `<script setup>` block, a Svelte instance script or an
+  Astro frontmatter stays lazy, because that code runs for each component
+  instance. The extraction cache and
+  the graph cache versions change, so the first run after the upgrade
+  rebuilds both caches. (#2936)
+
 ### Changed
+
+- **Boundary checks now cover files that no entry point reaches.** Import
+  rules, `boundaries.calls.forbidden` and `boundaries.coverage.requireAllFiles`
+  now check every analyzed file. Before, fallow skipped a zoned file that no
+  entry point reached, for example a script that only `make`, `mise` or a CI
+  step runs. With `dead-code --boundary-violations` or with `unused-files`
+  off, such a file got no finding at all. Now it gets the same boundary
+  findings as a reachable file. It can also keep its `unused-files` finding.
+  The `boundary zone '<zone>' matched 0 reachable files` warning is now
+  `matched 0 files` and fires only for a zone that matches no analyzed file.
+  This change can add findings to an existing configuration. To keep the old
+  result, save a baseline with `--save-baseline`, or add a
+  `// fallow-ignore-file boundary-violation` comment to the file. (#2937)
+
+- **Boundary checks now follow re-export chains.** A named or default import
+  through a barrel file is now judged against the zone of the module that
+  declares the symbol. Before, fallow judged only the barrel, so an import of
+  a `core` symbol through a `shared` barrel was not reported. `to_path` and
+  `to_zone` now name the origin module, and the new optional `via_path` field
+  names the barrel. The human, SARIF, CodeClimate, markdown and LSP messages
+  also name the barrel. Fallow reports one finding per importer and origin
+  module. When a re-export in the barrel itself breaks a rule, only the
+  barrel gets a finding. Namespace and side-effect imports stay judged by the
+  direct target. Baseline keys stay `from_path->to_path`, so existing
+  findings keep their keys. This change can add findings to an existing
+  configuration. To keep the old result, save a baseline with
+  `--save-baseline`, or add a `// fallow-ignore-next-line boundary-violation`
+  comment above the import. (#2939)
 
 - **`FALLOW_SUGGESTIONS=off` also skips the git probes of the next steps.**
   Before, `dead-code`, `dupes`, `health` and the combined run still started
@@ -34,6 +86,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an import no longer carries a finding. An import that also names a runtime
   value stays a leak edge. The parse cache version changes, so the first run
   after the upgrade parses every file again.
+
+- **GitLab reviews no longer post the same inline comment on every
+  pipeline.** GitLab removes discussions the token may not see after it
+  cuts a page, so a page can hold 99 items while more pages follow.
+  `fallow ci post-review` and `ci reconcile-review` stopped at that short
+  page, never saw their own earlier threads, and posted every finding
+  again. They now follow GitLab's `x-next-page` header. The sticky summary
+  comment lookup had the same gap and could create a second summary. When
+  the header is missing, a page shorter than 100 still ends the lookup.
+  Thanks [@Jerc92](https://github.com/Jerc92) for the contribution
+  ([#2912](https://github.com/fallow-rs/fallow/pull/2912)).
 
 - **CSS findings in Sass and Less files point at the right line.** For
   `.scss` and `.less` files and `<style lang="scss">` and
