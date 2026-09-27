@@ -72,7 +72,7 @@ Every fallow command with its purpose and key flags. The table is regenerated fr
 | `workspaces` | Inspect monorepo workspaces + discovery diagnostics (shorthand for `list --workspaces`) | (no flags) |
 | `dupes` | Code duplication detection | `--mode`, `--near`, `--threshold`, `--top`, `--changed-since`, `--workspace`, `--changed-workspaces`, `--skip-local`, `--cross-language`, `--ignore-imports`, `--explain-skipped`, `--fail-on-regression`, `--tolerance`, `--regression-baseline`, `--save-regression-baseline` |
 | `health` | Function complexity analysis (also covers component templates as synthetic `<template>` findings: Angular external `.html` files via `templateUrl` AND inline `@Component({ template: \`...\` })` literals, plus Vue, Svelte and Astro single-file components; suppress an Angular external template with `<!-- fallow-ignore-file complexity -->` at the top of the `.html` file, an Angular inline template with `// fallow-ignore-next-line complexity` directly above the `@Component` decorator, and a `.svelte` / `.vue` / `.astro` template with `<!-- fallow-ignore-next-line complexity -->` on the line immediately above the reported line) | `--complexity`, `--max-cyclomatic`, `--max-cognitive`, `--max-crap`, `--top`, `--sort`, `--file-scores`, `--hotspots`, `--ownership`, `--ownership-emails`, `--targets`, `--effort`, `--score`, `--min-score`, `--since`, `--min-commits`, `--save-snapshot`, `--trend`, `--coverage-gaps`, `--coverage`, `--coverage-root`, `--runtime-coverage`, `--min-invocations-hot`, `--min-observation-volume`, `--low-traffic-threshold`, `--css`, `--complexity-breakdown`, `--min-severity`, `--report-only`, `--workspace`, `--changed-workspaces`, `--baseline`, `--save-baseline` |
-| `flags` | Detect feature flag patterns (env vars, SDK calls, config objects) | `--top` |
+| `flags` | Detect feature flag patterns (env vars, SDK calls, config objects) | `--top`, `--retirement`, `--reason`, `--min-age`, `--flag-state`, `--max-flag-age` |
 | `suppressions` | List active fallow-ignore suppression markers (read-only inventory) | `--file` |
 | `explain` | Explain one issue type without running analysis | `<issue-type>`, `--format json` |
 | `audit` | Combined dead-code + complexity + duplication + styling for changed files, returns a verdict; `fallow review` is an alias for `fallow audit --brief` (advisory orientation brief, always exits 0) | `--base`, `--gate`, `--brief`, `--max-decisions`, `--walkthrough-guide`, `--walkthrough-file`, `--show-deprioritized`, `--production`, `--production-dead-code`, `--production-health`, `--production-dupes`, `--workspace`, `--changed-workspaces`, `--ci`, `--fail-on-issues`, `--explain`, `--explain-skipped`, `--dead-code-baseline`, `--health-baseline`, `--dupes-baseline`, `--max-crap`, `--coverage`, `--coverage-root`, `--no-css`, `--css-deep`, `--no-css-deep`, `--include-entry-exports` |
@@ -363,7 +363,7 @@ fallow list --entry-weight --format json --quiet
 fallow workspaces --format json --quiet  # alias of `fallow list --workspaces`
 ```
 
-The `--entry-weight` JSON output carries `entry_weight.entries[]`, one row per runtime entry point, heaviest first. Each row has `eager_modules` and `eager_bytes` (the project modules and source bytes that load before the entry runs; `import type` and a declaration file do not count), `eager_css_bytes`, `deferred_modules` and `deferred_bytes` (reached only through `import()` or a lazy glob), `out_of_thread_modules` and `out_of_thread_bytes` (reached only through a `new URL(..., import.meta.url)` reference such as a worker URL, `child_process.fork`, a pino transport or a `module.register` hook), `eager_packages[]` with the specifiers as written, and `dominating_imports[]`. A dominating import is one import that alone keeps `exclusive_bytes` on the startup path. The unit is `source_bytes`: types and comments count, and tree shaking does not apply, so the value is not a bundle size. Treat a dominating import as evidence for a review, not as a fix: a lazy load of code that the first screen needs can make startup slower.
+The `--entry-weight` JSON output carries `entry_weight.entries[]`, one row per runtime entry point, heaviest first. Each row has `eager_modules` and `eager_bytes` (the project modules and source bytes that load before the entry runs; `import type` and a declaration file do not count), `eager_css_bytes`, `deferred_modules` and `deferred_bytes` (reached only through `import()` or a lazy glob), `out_of_thread_modules` and `out_of_thread_bytes` (reached only through a `new URL(..., import.meta.url)` reference such as a worker URL, `child_process.fork`, a pino transport or a `module.register` hook), `eager_packages[]` with the specifiers as written, and `dominating_imports[]`. A dominating import is one import that alone keeps `exclusive_bytes` on the startup path. The unit is `source_bytes`: types and comments count, and tree shaking does not apply, so the value is not a bundle size. An import without the `type` keyword counts as eager, even when it brings in only types that TypeScript removes, so `eager_bytes` can be too high. Treat a dominating import as evidence for a review, not as a fix: a lazy load of code that the first screen needs can make startup slower.
 
 To gate eager growth in CI, save a baseline file on the main branch with `fallow list --entry-weight --save-regression-baseline <PATH>`. A later run with `--regression-baseline <PATH>` adds `entry_weight.regression`: per-entry `baseline_eager_bytes`, `current_eager_bytes`, `new_eager_packages` and `exceeded`. The comparison is report-only until you add `--fail-on-regression`; then an entry that grew more than `--tolerance` (bytes, or a percentage such as `5%`) exits 1. A new entry never fails the gate.
 
@@ -453,7 +453,7 @@ Human output groups paths under "Shared with your team (commit these)" and "Loca
 {
   "kind": "agent-install",
   "schema_version": 1,
-  "fallow_version": "3.29.0",
+  "fallow_version": "3.30.0",
   "root": "/abs/path",
   "mode": "install",
   "dry_run": false,
@@ -657,7 +657,7 @@ fallow health --format json --quiet --trend
 {
   "kind": "health",
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 32,
   "summary": {
     "files_analyzed": 482,
@@ -1060,7 +1060,7 @@ fallow audit \
 {
   "kind": "audit",
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "command": "audit",
   "verdict": "fail",
   "changed_files_count": 12,
@@ -1116,6 +1116,13 @@ Detects feature flag patterns in the codebase. Identifies environment variable f
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--top` | `string` | - | Show only the top N flags |
+| `--retirement` | `bool` | `false` | Add a retirement report: one row per flag, with the reasons the flag can be retired. Advisory only; nothing is removed |
+| `--reason` | `single-read-site\|test-only\|literal-constant\|identical-branches\|empty-branch\|guards-dead-code\|defined-never-read\|fully-rolled-out\|archived-in-vendor\|missing-in-vendor\|vendor-only` | - | Keep only retirement rows with this reason (repeatable) |
+| `--sort` | `age\|sites\|name` | `age` | Order of the retirement rows |
+| `--flag-age` | `blame\|pickaxe\|off` | `blame` | How to measure flag age: blame (lower bound), pickaxe (first commit with the name, slower) or off |
+| `--min-age` | `string` | - | Keep only retirement rows at least this many days old |
+| `--flag-state` | `string` | - | Vendor flag export (JSON, read offline) that adds the fully-rolled-out, archived-in-vendor, missing-in-vendor and vendor-only reasons |
+| `--max-flag-age` | `string` | - | Exit with code 1 when a flag in scope is older than this many days. Opt-in; needs a flag age |
 
 Common global flags for this command: [`--format`](#global-flags), [`--quiet`](#global-flags), [`--changed-since`](#global-flags), [`--workspace`](#global-flags).
 <!-- generated:flags:flags:end -->
@@ -1128,6 +1135,10 @@ fallow flags --format json --quiet
 # Top 10 flags
 fallow flags --format json --quiet --top 10
 
+# Flags at least 90 days old, oldest first. A row with an empty
+# `reasons` array is not a retirement candidate.
+fallow flags --retirement --min-age 90 --format json --quiet
+
 # Single workspace package
 fallow flags --format json --quiet --workspace my-package
 ```
@@ -1137,7 +1148,7 @@ fallow flags --format json --quiet --workspace my-package
 ```json
 {
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 116,
   "feature_flags": [],
   "total_flags": 0
@@ -1238,7 +1249,7 @@ fallow security --gate newly-reachable --changed-since origin/main
 {
   "kind": "security",
   "schema_version": "4",
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 42,
   "config": {
     "rules": {
@@ -1267,7 +1278,7 @@ fallow security --gate newly-reachable --changed-since origin/main
 {
   "kind": "security",
   "schema_version": "4",
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 42,
   "config": {
     "rules": {
@@ -1528,7 +1539,7 @@ Pack files can also reference the published schema directly: `"$schema": "https:
 
 ---
 
-## `license`: Manage Continuous Runtime License
+## `license`: Manage the Fallow Cloud License
 
 Manage the local JWT used to unlock continuous/cloud runtime monitoring. Single-capture local runtime analysis does not require a license. Verification is fully offline against an Ed25519 public key compiled into the binary. Only `--trial` and `refresh` hit the network (`api.fallow.cloud`, 5s connect / 10s total timeout).
 
@@ -1667,7 +1678,7 @@ Helper subcommand for runtime coverage setup, focused analysis, and cloud invent
 
 - `coverage setup` - resumable state machine that wires sidecar installation, framework-aware coverage recipe writing, optional license activation for continuous monitoring, and automatic handoff into `fallow health --runtime-coverage`.
 - `coverage analyze` - focused runtime coverage analysis. Local mode reads `--runtime-coverage <path>`; cloud mode requires explicit `--cloud`, `--runtime-coverage-cloud`, or `FALLOW_RUNTIME_COVERAGE_SOURCE=cloud` and never triggers from `FALLOW_API_KEY` alone.
-- `coverage upload-inventory` - push a static function inventory to fallow cloud so the dashboard can surface `untracked` functions (those in the codebase but never called at runtime).
+- `coverage upload-inventory` - push a static function inventory to Fallow Cloud so the dashboard can surface `untracked` functions (those in the codebase but never called at runtime).
 
 ```bash
 fallow coverage setup                         # interactive
@@ -1701,7 +1712,7 @@ fallow coverage upload-source-maps --dry-run            # print maps and fileNam
 |------|------|---------|-------------|
 | `--runtime-coverage <PATH>` | path | none | Local V8 directory, V8 JSON file, or Istanbul coverage map. Mutually exclusive with cloud mode. |
 | `--cloud`, `--runtime-coverage-cloud` | bool | false | Explicitly fetch cloud runtime facts from `/v1/coverage/:repo/runtime-context`. |
-| `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow cloud bearer token, used only after explicit cloud opt-in. |
+| `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow Cloud bearer token, used only after explicit cloud opt-in. |
 | `--api-endpoint <URL>` | string | `$FALLOW_API_URL` or `https://api.fallow.cloud` | Override for staging / on-prem. |
 | `--repo <OWNER/REPO>` | string | `$FALLOW_REPO`, then parsed git origin | Repository whose latest cloud runtime facts should be pulled. Slashes are percent-encoded as one route segment. |
 | `--coverage-period <DAYS>` | integer | 30 | Cloud observation window, 1 through 90 days. |
@@ -1727,7 +1738,7 @@ Under `--production` the evidence block also carries `test_only_reference`. It i
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow cloud bearer token. Generate at `https://fallow.cloud/settings#api-keys`. **Prefer `$FALLOW_API_KEY` on shared CI runners**: `--api-key` on the command line may be visible to other processes via `ps`. |
+| `--api-key <KEY>` | string | `$FALLOW_API_KEY` | Fallow Cloud bearer token. Generate at `https://fallow.cloud/settings#api-keys`. **Prefer `$FALLOW_API_KEY` on shared CI runners**: `--api-key` on the command line may be visible to other processes via `ps`. |
 | `--api-endpoint <URL>` | string | `$FALLOW_API_URL` or `https://api.fallow.cloud` | Override for staging / on-prem. |
 | `--project-id <OWNER/REPO>` | string | `$GITHUB_REPOSITORY` → `$CI_PROJECT_PATH` → `git remote get-url origin` | Project identifier. |
 | `--git-sha <SHA>` | string | `git rev-parse HEAD` | Commit SHA this inventory is keyed to. Max 64 chars; `[A-Za-z0-9._-]` only. |
@@ -1742,7 +1753,7 @@ Only plain JS/TS/JSX/TSX sources are walked. Declaration files (`*.d.ts`, `*.d.m
 ### Environment
 
 - `FALLOW_COV_BIN` - explicit override for the sidecar binary (for `setup`). Wins over all other discovery paths. Must point to an existing file.
-- `FALLOW_API_KEY` - fallow cloud bearer token (for `upload-inventory` and `upload-source-maps`). Overridden by `--api-key` for `upload-inventory`; `upload-source-maps` reads only the env var so secrets stay out of argv.
+- `FALLOW_API_KEY` - Fallow Cloud bearer token (for `upload-inventory` and `upload-source-maps`). Overridden by `--api-key` for `upload-inventory`; `upload-source-maps` reads only the env var so secrets stay out of argv.
 - `FALLOW_API_URL` - base URL for cloud calls. Overridden by `--api-endpoint`.
 - `FALLOW_CA_BUNDLE` - PEM certificate bundle for cloud calls. Relative paths resolve from the process cwd. The bundle replaces default WebPKI roots, so private-CA runners should pass a complete bundle that includes public roots plus the private CA.
 
@@ -2045,7 +2056,7 @@ The HTTP layer mirrors the bash `gh_api_retry` / `curl_retry` helpers: `FALLOW_A
 {
   "kind": "dead-code",
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 45,
   "total_issues": 12,
   "entry_points": {
@@ -2205,7 +2216,7 @@ When `--baseline` is used in combined output, the JSON includes a `baseline_delt
 {
   "kind": "dupes",
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 82,
   "total_clones": 15,
   "total_lines_duplicated": 230,
@@ -2249,11 +2260,11 @@ When running `fallow` with no subcommand (all analyses), the JSON output combine
 {
   "kind": "combined",
   "schema_version": 7,
-  "version": "3.29.0",
+  "version": "3.30.0",
   "elapsed_ms": 159,
   "check": {
     "schema_version": 7,
-    "version": "3.29.0",
+    "version": "3.30.0",
     "elapsed_ms": 45,
     "total_issues": 12,
     "unused_files": [],

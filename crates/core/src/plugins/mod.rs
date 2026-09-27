@@ -69,6 +69,7 @@ const RUNTIME_ENTRY_POINT_PLUGINS: &[&str] = &[
     "tsup",
     "vite",
     "vitepress",
+    "waku",
     "webpack",
     "wrangler",
     "wxt",
@@ -1060,8 +1061,10 @@ fn compile_excluded_segment_regexes(
         .collect()
 }
 
+/// Whether a segment of `path` matches one of `regexes`. The path can use the
+/// native separator: on Windows a caller can pass `src\pages\x.tsx`.
 fn matches_segment_regex(path: &str, regexes: &[Regex]) -> bool {
-    path.split('/')
+    path.split(std::path::is_separator)
         .any(|segment| regexes.iter().any(|regex| regex.is_match(segment)))
 }
 
@@ -1841,6 +1844,7 @@ mod vite;
 mod vitepress;
 mod vitest;
 mod vscode;
+mod waku;
 mod webdriverio;
 mod webpack;
 mod wrangler;
@@ -1850,6 +1854,24 @@ mod wxt;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn segment_regexes_split_on_the_native_separator() {
+        let regexes = vec![Regex::new("^_(components|hooks)$").expect("valid regex")];
+        assert!(matches_segment_regex(
+            "src/pages/_components/a.tsx",
+            &regexes
+        ));
+        assert!(!matches_segment_regex(
+            "src/pages/components/a.tsx",
+            &regexes
+        ));
+        assert_eq!(
+            matches_segment_regex("src\\pages\\_components\\a.tsx", &regexes),
+            cfg!(windows),
+            "a backslash separates segments only where it is the native separator"
+        );
+    }
     use std::path::Path;
 
     #[test]

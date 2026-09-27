@@ -186,7 +186,7 @@
       "section": "commands",
       "row": "flags",
       "column": "Key Flags",
-      "seed": "`--top`"
+      "seed": "`--top`, `--retirement`, `--reason`, `--sort`, `--flag-age`, `--min-age`, `--flag-state`, `--max-flag-age`"
     },
     {
       "section": "commands",
@@ -1126,6 +1126,48 @@
     },
     {
       "section": "flags:flags",
+      "row": "--flag-age",
+      "column": "Description",
+      "seed": "How to measure flag age: blame (lower bound), pickaxe (first commit with the name, slower) or off"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--flag-state",
+      "column": "Description",
+      "seed": "Vendor flag export (JSON, read offline) that adds the fully-rolled-out, archived-in-vendor, missing-in-vendor and vendor-only reasons"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--max-flag-age",
+      "column": "Description",
+      "seed": "Exit with code 1 when a flag in scope is older than this many days. Opt-in; needs a flag age"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--min-age",
+      "column": "Description",
+      "seed": "Keep only retirement rows at least this many days old"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--reason",
+      "column": "Description",
+      "seed": "Keep only retirement rows with this reason (repeatable)"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--retirement",
+      "column": "Description",
+      "seed": "Add a retirement report: one row per flag, with the reasons the flag can be retired. Advisory only; nothing is removed"
+    },
+    {
+      "section": "flags:flags",
+      "row": "--sort",
+      "column": "Description",
+      "seed": "Order of the retirement rows"
+    },
+    {
+      "section": "flags:flags",
       "row": "--top",
       "column": "Description",
       "seed": "Show only the top N flags"
@@ -1960,6 +2002,12 @@
     },
     {
       "section": "issue-types",
+      "row": "flag-retirement-candidate",
+      "column": "Description",
+      "seed": "Feature flag is a retirement candidate"
+    },
+    {
+      "section": "issue-types",
       "row": "hardcoded-secret",
       "column": "Description",
       "seed": "Provider-prefixed or contextual secret literals require verification; Include-required category: enable via security.categories.include"
@@ -2388,7 +2436,7 @@
       "section": "mcp-tools",
       "row": "get_cloud_runtime_context",
       "column": "Description",
-      "seed": "Runtime coverage pulled from fallow cloud for a repository, merged into the same runtime_coverage block the local runtime-coverage tools return"
+      "seed": "Runtime coverage pulled from Fallow Cloud for a repository, merged into the same runtime_coverage block the local runtime-coverage tools return"
     },
     {
       "section": "mcp-tools",
