@@ -3516,7 +3516,9 @@ pub struct BoundaryViolation {
     /// The file making the disallowed import.
     #[serde(serialize_with = "serde_path::serialize")]
     pub from_path: PathBuf,
-    /// The file being imported that violates the boundary.
+    /// The file being imported that violates the boundary. When the import
+    /// goes through a re-export chain, this is the origin module that
+    /// declares the imported symbol, not the barrel.
     #[serde(serialize_with = "serde_path::serialize")]
     pub to_path: PathBuf,
     /// The zone the importing file belongs to.
@@ -3529,6 +3531,14 @@ pub struct BoundaryViolation {
     pub line: u32,
     /// 0-based byte column offset of the import statement.
     pub col: u32,
+    /// The barrel file that the source file imports directly, when the
+    /// violation comes from a re-export chain. Absent for a direct import.
+    #[serde(
+        default,
+        serialize_with = "serde_path::serialize_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub via_path: Option<PathBuf>,
 }
 
 /// A source file that does not match any configured architecture boundary zone.
@@ -3907,9 +3917,11 @@ pub enum FlagKind {
 pub enum FlagConfidence {
     /// Low confidence: heuristic match (config object patterns).
     Low,
-    /// Medium confidence: pattern match with some ambiguity.
+    /// Medium confidence: a generic SDK name, such as `isEnabled`, in a file
+    /// that imports no flag SDK or flag module.
     Medium,
-    /// High confidence: unambiguous pattern (env vars, direct SDK calls).
+    /// High confidence: unambiguous pattern (env vars, specific SDK calls,
+    /// generic SDK calls in a file that imports a flag SDK or flag module).
     High,
 }
 
@@ -4235,6 +4247,7 @@ mod tests {
                 import_specifier: "../db/queries".to_string(),
                 line: 3,
                 col: 0,
+                via_path: None,
             })],
             ..Default::default()
         };
@@ -4729,6 +4742,7 @@ mod tests {
                 import_specifier: to.to_string(),
                 line,
                 col,
+                via_path: None,
             })
         };
         r.boundary_violations.push(mk("z.ts", 1, 0, "a.ts"));
@@ -4921,6 +4935,7 @@ mod tests {
             import_specifier: "../db/queries".to_string(),
             line: 3,
             col: 0,
+            via_path: None,
         };
         let json = serde_json::to_value(&v).unwrap();
         assert_eq!(json["from_path"], "src/ui/button.tsx");
@@ -5070,6 +5085,7 @@ mod tests {
                 import_specifier: "../target".to_string(),
                 line: 1,
                 col: 0,
+                via_path: None,
             })],
             boundary_coverage_violations: vec![BoundaryCoverageViolationFinding::with_actions(
                 BoundaryCoverageViolation {

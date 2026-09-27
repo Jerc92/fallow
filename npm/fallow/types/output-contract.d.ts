@@ -731,6 +731,15 @@ reason: string
 kind: "plugin-effect-not-modeled"
 } | {
 kind: "coverage-auto-detected"
+} | {
+kind: "flag-age-shallow-clone"
+} | {
+/**
+ * Why no history is available, as a kebab-case token:
+ * `not-a-repository` or `no-commits`. The set is open.
+ */
+cause: string
+kind: "flag-age-unavailable"
 })
 /**
  * Discriminant for [`CloneGroupAction::kind`]. Mirrors the action types
@@ -1307,6 +1316,30 @@ export type FeatureFlagConfidence = ("high" | "medium" | "low")
  */
 export type FeatureFlagActionType = ("investigate-flag" | "suppress-line")
 /**
+ * How the report measures the age of a flag.
+ */
+export type FlagAgeMode = ("blame" | "pickaxe" | "off")
+/**
+ * How a retirement row's flag was detected.
+ */
+export type RetirementFlagKind = ("environment_variable" | "sdk_call" | "config_object" | "constant" | "vendor_export")
+/**
+ * What a site does with the flag.
+ */
+export type FlagSiteRole = ("read" | "definition")
+/**
+ * Why a flag is a retirement candidate.
+ */
+export type RetirementReason = ("single-read-site" | "test-only" | "literal-constant" | "identical-branches" | "empty-branch" | "guards-dead-code" | "defined-never-read" | "fully-rolled-out" | "archived-in-vendor" | "missing-in-vendor" | "vendor-only")
+/**
+ * Action discriminants for a retirement row.
+ */
+export type RetirementActionType = "review-retirement"
+/**
+ * State of a flag in a `--flag-state` vendor export.
+ */
+export type VendorFlagState = ("on" | "off" | "rolled_out" | "archived" | "experiment")
+/**
  * Independently-versioned wire-version newtype for the brief envelope.
  * Serializes as the integer `REVIEW_BRIEF_SCHEMA_VERSION`.
  */
@@ -1634,7 +1667,7 @@ duplication_demoted: number
  * gate and leaves the object absent.
  *
  * The names this build can emit are `error-severity-findings`, `regression`,
- * `stale-baseline`, `duplication-threshold`, `health-min-score`,
+ * `stale-baseline`, `baseline-growth`, `duplication-threshold`, `health-min-score`,
  * `health-min-severity`, `health-findings`, `health-coverage-gaps`,
  * `health-runtime-coverage`, `security`, `security-advisory`, `audit-verdict`,
  * `type-aware-require` and `parse-error`. The set is OPEN: a name a consumer does not
@@ -4522,7 +4555,9 @@ export interface BoundaryViolationFinding {
  */
 from_path: string
 /**
- * The file being imported that violates the boundary.
+ * The file being imported that violates the boundary. When the import
+ * goes through a re-export chain, this is the origin module that
+ * declares the imported symbol, not the barrel.
  */
 to_path: string
 /**
@@ -4545,6 +4580,11 @@ line: number
  * 0-based byte column offset of the import statement.
  */
 col: number
+/**
+ * The barrel file that the source file imports directly, when the
+ * violation comes from a re-export chain. Absent for a direct import.
+ */
+via_path?: (string | null)
 /**
  * Suggested next steps. Always emitted (possibly empty for
  * forward-compat).
@@ -14118,6 +14158,15 @@ total_flags: number
  */
 workspace_diagnostics?: WorkspaceDiagnostic[]
 /**
+ * One row per flag with the reasons the flag can be retired.
+ *
+ * Present only with `--retirement`. Without that option the key is
+ * omitted, so the envelope stays byte-identical and `schema_version`
+ * does not move. The per-site `feature_flags[]` array is the same with
+ * and without the option.
+ */
+retirement?: (FlagRetirementReport | null)
+/**
  * `_meta` block; see [`FeatureFlagsMeta`].
  */
 _meta?: (FeatureFlagsMeta | null)
@@ -14191,6 +14240,347 @@ dead_export_count: number
  * Names of the unused exports the flag guards.
  */
 dead_exports: string[]
+}
+/**
+ * The `retirement` block of `fallow flags --retirement --format json`.
+ */
+export interface FlagRetirementReport {
+/**
+ * The analysis clock that ages count from, as an RFC 3339 UTC
+ * timestamp. `null` when the age mode is `off`, and also when no git
+ * history is available: outside a repository, on a branch without
+ * commits, or in a shallow clone. A `workspace_diagnostics` entry then
+ * gives the reason.
+ */
+generated_at_clock?: (string | null)
+age_mode: FlagAgeMode
+/**
+ * The vendor export that the report read. Present only with
+ * `--flag-state`.
+ */
+vendor_state?: (RetirementVendorState | null)
+summary: RetirementSummary
+/**
+ * Verdict of `--fail-on-regression` against a flags regression
+ * baseline. Present only when the gate ran.
+ */
+regression?: (FlagRegressionResult | null)
+/**
+ * Verdict of `--max-flag-age`. Present only with that option.
+ */
+max_flag_age?: (FlagAgeGate | null)
+/**
+ * One row per flag after the `--min-age`, `--reason`, `--sort` and
+ * `--top` options. A row with an empty `reasons` array is not a
+ * candidate.
+ */
+flags: RetirementFlag[]
+}
+/**
+ * The `--flag-state` vendor export that the report read.
+ */
+export interface RetirementVendorState {
+/**
+ * The vendor name from the export, for example `launchdarkly`.
+ */
+source: string
+/**
+ * When the export was made, as the export gives it.
+ */
+exported_at: string
+/**
+ * Days between `exported_at` and the analysis clock. `null` when the
+ * date cannot be read.
+ */
+export_age_days?: (number | null)
+/**
+ * Number of flags in the export.
+ */
+flags: number
+}
+/**
+ * Totals of the retirement report.
+ */
+export interface RetirementSummary {
+/**
+ * Distinct flags in the code in scope, before `--min-age` and
+ * `--reason`. The `vendor-only` rows of a `--flag-state` export do not
+ * count here, so the count does not change when a key is added in the
+ * vendor only. `by_reason` counts them.
+ */
+distinct_flags: number
+/**
+ * Rows in scope with at least one reason, `vendor-only` rows included.
+ */
+candidates: number
+/**
+ * Number of rows in scope per reason.
+ */
+by_reason: {
+[k: string]: number
+}
+}
+/**
+ * Verdict of the flags regression gate.
+ */
+export interface FlagRegressionResult {
+status: RegressionStatus
+/**
+ * The `--tolerance` value. Absent when the status is `skipped`.
+ */
+tolerance?: (number | null)
+/**
+ * How to read `tolerance`. Absent when the status is `skipped`.
+ */
+tolerance_kind?: (RegressionToleranceKind | null)
+/**
+ * The compared counts: `distinct_flags` first, then each `--reason`
+ * code. Empty when the status is `skipped`.
+ */
+metrics: FlagRegressionMetric[]
+/**
+ * Whether one count grew more than the tolerance.
+ */
+exceeded: boolean
+/**
+ * Why the gate did not run. Present only when the status is `skipped`.
+ */
+reason?: (string | null)
+}
+/**
+ * One count that the flags regression gate compares.
+ */
+export interface FlagRegressionMetric {
+/**
+ * `distinct_flags`, or a reason code from `--reason`.
+ */
+metric: string
+/**
+ * The count in the baseline.
+ */
+baseline: number
+/**
+ * The count in this run.
+ */
+current: number
+/**
+ * `current - baseline`.
+ */
+delta: number
+/**
+ * Whether the growth is more than the tolerance.
+ */
+exceeded: boolean
+}
+/**
+ * Verdict of `--max-flag-age`.
+ */
+export interface FlagAgeGate {
+status: RegressionStatus
+/**
+ * The `--max-flag-age` value in days.
+ */
+max_days: number
+/**
+ * Whether one flag in scope is older than `max_days`.
+ */
+exceeded: boolean
+/**
+ * Flags in the code in scope without a measured age. The gate cannot
+ * check these flags.
+ */
+unmeasured: number
+/**
+ * Why the gate did not run. Present only when the status is `skipped`.
+ */
+reason?: (string | null)
+/**
+ * The flags in scope that are older than `max_days`, oldest first.
+ * The `--reason`, `--min-age` and `--top` options do not change this
+ * list.
+ */
+flags: FlagAgeGateEntry[]
+}
+/**
+ * A flag that is older than `--max-flag-age`.
+ */
+export interface FlagAgeGateEntry {
+/**
+ * Flag identifier.
+ */
+flag_name: string
+kind: RetirementFlagKind
+/**
+ * Flag SDK, for SDK flags with a known provider.
+ */
+sdk_name?: (string | null)
+/**
+ * Workspace root of the flag, in a project with workspaces.
+ */
+workspace?: (string | null)
+/**
+ * Age of the flag in days.
+ */
+age_days: number
+}
+/**
+ * One flag in the retirement report.
+ */
+export interface RetirementFlag {
+/**
+ * Flag identifier.
+ */
+flag_name: string
+kind: RetirementFlagKind
+/**
+ * Flag SDK, for SDK flags with a known provider.
+ */
+sdk_name?: (string | null)
+/**
+ * Workspace root relative to the analysed root, when the project has
+ * workspaces and the flag is inside one. Part of the flag identity.
+ */
+workspace?: (string | null)
+/**
+ * Every site of the flag, sorted by path, line and column.
+ */
+sites: RetirementSite[]
+/**
+ * Number of sites in this row that read the flag.
+ */
+read_sites: number
+/**
+ * Whether every read site is in a test, story or mock file. Read sites
+ * of the same flag in other workspaces count too.
+ */
+test_only: boolean
+/**
+ * First commit that added the flag name. Set in `pickaxe` mode only.
+ */
+first_seen?: (FlagCommit | null)
+/**
+ * Oldest commit among the lines that still hold the flag.
+ */
+oldest_surviving_site?: (FlagCommit | null)
+/**
+ * Newest commit among the lines that still hold the flag.
+ */
+last_touched?: (FlagCommit | null)
+/**
+ * Days between the flag's oldest known commit and the analysis clock.
+ * In `blame` mode this is a lower bound.
+ */
+age_days?: (number | null)
+/**
+ * Retirement reasons, in report order. Empty for a flag that is not a
+ * candidate.
+ */
+reasons: RetirementReason[]
+/**
+ * Evidence for each reason.
+ */
+evidence: RetirementEvidence[]
+/**
+ * Follow-up actions. Empty for a flag that is not a candidate.
+ */
+actions: RetirementAction[]
+/**
+ * The vendor state of the flag. Present only with `--flag-state`, for
+ * a flag whose key is in the export.
+ */
+vendor?: (RetirementVendor | null)
+}
+/**
+ * One site of a flag in the retirement report.
+ */
+export interface RetirementSite {
+/**
+ * File path relative to the analysed root.
+ */
+path: string
+/**
+ * 1-based line.
+ */
+line: number
+/**
+ * 0-based byte column.
+ */
+col: number
+role: FlagSiteRole
+/**
+ * Whether the file is a test, story or mock file.
+ */
+in_test: boolean
+}
+/**
+ * A commit that git history links to a flag.
+ */
+export interface FlagCommit {
+/**
+ * Abbreviated commit hash.
+ */
+commit: string
+/**
+ * Commit date in UTC, as `YYYY-MM-DD`.
+ */
+date: string
+}
+/**
+ * One piece of evidence for a retirement reason.
+ */
+export interface RetirementEvidence {
+reason: RetirementReason
+/**
+ * File path relative to the analysed root. For `vendor-only`, the path
+ * of the `--flag-state` file: relative to the root when the file is
+ * inside it, else as given.
+ */
+path: string
+/**
+ * 1-based line.
+ */
+line: number
+/**
+ * What the evidence shows.
+ */
+detail: string
+}
+/**
+ * A follow-up action for a retirement candidate.
+ */
+export interface RetirementAction {
+type: RetirementActionType
+/**
+ * Always `false`: Fallow never removes a flag.
+ */
+auto_fixable: boolean
+/**
+ * Human-readable action description.
+ */
+description: string
+}
+/**
+ * The vendor state of one flag in the retirement report.
+ */
+export interface RetirementVendor {
+/**
+ * The key in the vendor export, before `flags.vendorKeyPrefix` is
+ * removed.
+ */
+key: string
+state: VendorFlagState
+/**
+ * Whether the flag serves one variation, when the export says so.
+ */
+serves_single_variation?: (boolean | null)
+/**
+ * When the vendor created the flag, as the export gives it.
+ */
+created_at?: (string | null)
+/**
+ * When the vendor last evaluated the flag, as the export gives it.
+ */
+last_evaluated_at?: (string | null)
 }
 /**
  * Optional `_meta` block for [`FeatureFlagsOutput`]. Both fields are optional

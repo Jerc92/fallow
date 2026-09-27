@@ -36,6 +36,19 @@ error by suppressing a downstream detector.
   `crates/core/src/analyze/boundary.rs`,
   `crates/core/src/analyze/boundary_calls/`, and
   `crates/core/src/analyze/policy/`.
+  Import rules, `boundaries.calls.forbidden`, and
+  `boundaries.coverage.requireAllFiles` check every analyzed file.
+  Reachability does not gate them: a file that only a task runner executes is
+  still real code. Such a file can get an `unused-files` finding and a
+  boundary finding in the same run (issue #2937).
+  Import rules follow re-export chains. A named or default import through a
+  barrel is judged against the zone of the module that declares the symbol,
+  and `to_path` is that origin module. The optional `via_path` field names the
+  barrel. The pass reports one finding per importer and origin module. A
+  direct import of the origin wins over a barrel import. When a hop in the
+  chain breaks the rules of the zone that owns the re-exporting file, only
+  that hop gets a finding. Namespace and side-effect imports stay judged by
+  the direct target (issue #2939).
 - Framework and component intelligence:
   `crates/core/src/analyze/react_intel.rs`, route and render analyzers, and
   `crates/core/src/plugins/`.
@@ -47,7 +60,42 @@ error by suppressing a downstream detector.
   owned by `crates/security/`.
 - Feature flags: extraction facts in `crates/extract/src/flags.rs`, project
   analysis in `crates/engine/src/flags.rs`, and extraction helpers exposed by
-  `crates/engine/src/feature_flags.rs`.
+  `crates/engine/src/feature_flags.rs`. A read such as `useFlag(FLAGS.X)`
+  resolves in the extractor when `FLAGS` is a module-level `as const` object
+  or a string enum. When `FLAGS` is imported, the extractor keeps the read in
+  `ModuleInfo::flag_registry_facts`, and `crates/engine/src/flag_registry.rs`
+  resolves the key from the exporting module. The extractor has no
+  semantic scopes, so it records each parameter and nested binding with a
+  registry name as a shadow for its function or block. The engine does not
+  resolve an import from a declared dependency that is not a workspace
+  package. The user patterns of the
+  `flags` config section apply during the parse, so one parse gives every
+  flag. `cache_config_hash` folds those patterns into the parse cache key,
+  and every parse that writes the cache must pass
+  `ResolvedConfig::flags.patterns()`.
+- Flag retirement (`fallow flags --retirement`): the extractor stores guard
+  facts (`FlagSiteFacts`: identical branches, a guard with no code in any branch, a
+  Vercel `flag()` definition) on each `FlagUse`, and literal `const` flags
+  and definition bindings in `flag_registry_facts`. These facts stay out of
+  the per-site `feature_flags[]` array.
+  `flags::analyze_feature_flags_for_retirement` returns the same flags as
+  the plain scan plus `flag_retirement::RetirementFacts`, and it keeps the
+  dead-code results of the pass the scan already runs.
+  `flag_retirement::aggregate_flags` groups sites by kind, SDK, name and
+  workspace. It takes every site of the project and a scope predicate,
+  because the read reasons count reads outside the scope.
+  `crates/engine/src/flag_age.rs` reads age from `git blame` (default) or
+  `git log -S`, counts days against `AnalysisClock`, and caches results in
+  `flag-age.json` for the current HEAD. `crates/engine/src/flag_vendor.rs`
+  reads the `--flag-state` export (schema version 1, capped at 16 MiB,
+  unknown fields rejected) and adds the four vendor reasons. Only SDK rows
+  match the export, and only the rows of the SDK that the export `source`
+  names when the project has that SDK. `vendor-only` rows need a
+  whole-project run. `crates/engine/src/flag_report.rs` is the one entry
+  point that the CLI and the API call, so both surfaces build the same
+  block. The regression gate lives in `crates/cli/src/regression/flags.rs`
+  and works only with `--retirement`. Every retirement action is
+  `auto_fixable: false`.
 
 ## Accuracy invariants
 

@@ -1,3 +1,4 @@
+use crate::tests::eager_dynamic_import_sources;
 use crate::tests::parse_ts as parse_source;
 use crate::{ModuleInfo, ModuleLoadMechanism, SemanticFact, VitestModuleMockAction};
 
@@ -1650,4 +1651,23 @@ fn new_url_parent_relative_extensionless_specifier_is_speculative() {
         imp.is_speculative,
         "parent-relative extensionless new URL specifier must be marked speculative"
     );
+}
+
+#[test]
+fn top_level_await_import_is_eager() {
+    let info = parse_source(
+        r#"
+const { a } = await import("./a");
+const b = (await import("./b")).default;
+await (import("./c"));
+export async function later() {
+  return await import("./lazy-fn");
+}
+export const arrow = async () => (await import("./lazy-arrow")).x;
+const lazy = import("./lazy-no-await");
+"#,
+    );
+    let mut eager = eager_dynamic_import_sources(&info);
+    eager.sort_unstable();
+    assert_eq!(eager, ["./a", "./b", "./c"]);
 }

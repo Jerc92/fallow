@@ -267,6 +267,7 @@ fn global_value_options() -> &'static [&'static str] {
         "--baseline",
         "--parent-run",
         "--save-baseline",
+        "--baseline-base",
         "-w",
         "--workspace",
         "--changed-workspaces",
@@ -454,8 +455,18 @@ pub fn run_pre_dispatch_checks(
         report::github::init_report_prefix(root);
     }
 
+    if defers_tolerance_parse(cli.command.as_ref()) {
+        return Ok(regression::Tolerance::Absolute(0));
+    }
     parse_cli_tolerance(cli, output)
         .map_err(|code| fail(code, telemetry::FailureReason::Validation))
+}
+
+/// `fallow list` reads `--tolerance` only for the `--entry-weight` gate, so
+/// the list dispatcher parses the value there. A plain listing never fails on
+/// a value that it does not use.
+fn defers_tolerance_parse(command: Option<&Command>) -> bool {
+    matches!(command, Some(Command::List { .. } | Command::Workspaces))
 }
 
 fn handle_cli_parse_error(err: &clap::Error) -> ExitCode {
@@ -588,13 +599,18 @@ fn sarif_file_without_sarif_error(cli: &Cli) -> Option<String> {
     ))
 }
 
-/// Return the global baseline flag (`--baseline` or `--save-baseline`) on the
-/// command line, if any.
+/// Return the global baseline flag (`--baseline`, `--save-baseline`,
+/// `--fail-on-baseline-growth` or `--baseline-base`) on the command line, if
+/// any.
 pub fn cli_global_baseline_flag(cli: &Cli) -> Option<&'static str> {
     if cli.baseline.is_some() {
         Some("--baseline")
     } else if cli.save_baseline.is_some() {
         Some("--save-baseline")
+    } else if cli.fail_on_baseline_growth {
+        Some("--fail-on-baseline-growth")
+    } else if cli.baseline_base.is_some() {
+        Some("--baseline-base")
     } else {
         None
     }

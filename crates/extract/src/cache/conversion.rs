@@ -511,6 +511,7 @@ pub fn cached_to_module_opts(
             Vec::new()
         },
         flag_uses: cached.flag_uses.clone(),
+        flag_registry_facts: cached.flag_registry_facts.clone(),
         class_heritage: cached.class_heritage.clone(),
         exported_factory_returns: cached_opt_to_arc(cached.exported_factory_returns.as_deref()),
         exported_factory_return_object_shapes: cached_opt_to_arc(
@@ -541,6 +542,7 @@ pub fn cached_to_module_opts(
         inline_server_action_exports: cached.inline_server_action_exports.clone(),
         di_key_sites: cached.di_key_sites.clone(),
         has_dynamic_provide: cached.has_dynamic_provide,
+        is_server_action_module: cached.is_server_action_module,
         // Derived in `release_resolution_payload` from `imports` + `unused_import_bindings`
         // (both cached); never persisted, so the cache-load path leaves it empty.
         referenced_import_bindings: Vec::new(),
@@ -621,6 +623,7 @@ pub fn module_to_cached(
         complexity: module.complexity.clone(),
         complexity_extracted,
         flag_uses: module.flag_uses.clone(),
+        flag_registry_facts: module.flag_registry_facts.clone(),
         class_heritage: module.class_heritage.clone(),
         exported_factory_returns: (!module.exported_factory_returns.is_empty())
             .then(|| Box::from(&*module.exported_factory_returns)),
@@ -654,6 +657,7 @@ pub fn module_to_cached(
         inline_server_action_exports: module.inline_server_action_exports.clone(),
         di_key_sites: module.di_key_sites.clone(),
         has_dynamic_provide: module.has_dynamic_provide,
+        is_server_action_module: module.is_server_action_module,
         component_props: module.component_props.clone(),
         has_props_attrs_fallthrough: module.has_props_attrs_fallthrough,
         has_define_expose: module.has_define_expose,

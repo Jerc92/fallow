@@ -271,6 +271,8 @@ pub struct ResolvedConfig {
     /// `unused-component-props`. `None` when `unusedComponentProps.ignorePattern`
     /// is unset. Compiled from the validated raw pattern in [`Self::resolve`].
     pub unused_component_props_ignore: Option<regex::Regex>,
+    /// Options for the `circular-dependencies` rule, passed through unchanged.
+    pub circular_dependencies: super::CircularDependenciesConfig,
     /// Clone-detection settings, passed through unchanged.
     pub duplicates: DuplicatesConfig,
     /// Explicit similar-code candidate settings, passed through unchanged.
@@ -380,23 +382,44 @@ pub fn resolve_max_file_size_bytes(max_file_size_mb: Option<u32>) -> Option<u64>
     }
 }
 
-/// Compute the cache-invalidation hash over extraction-affecting config fields.
-/// Hash the extraction-affecting configuration a persisted cache is keyed on.
+/// Hash the extraction-affecting configuration a persisted cache is keyed on:
+/// the external plugin names and the user flag patterns, which the parse
+/// applies. Built-in-only flag patterns add nothing, so a config without a
+/// `flags` section keeps the hash it had before flag patterns joined it.
 ///
 /// Public because a run is not the only thing that needs it: `fallow doctor`
 /// inspects the cache without running an analysis, and it resolves config with
 /// caching disabled, which zeroes the stored hash. Comparing against that zero
 /// reported every healthy cache as config drift.
 #[must_use]
-pub fn cache_config_hash(external_plugins: &[ExternalPluginDef]) -> u64 {
+pub fn cache_config_hash(external_plugins: &[ExternalPluginDef], flags: &FlagsConfig) -> u64 {
     let mut names: Vec<&str> = external_plugins.iter().map(|p| p.name.as_str()).collect();
     names.sort_unstable();
     let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     for name in names {
-        hasher.update(&(name.len() as u32).to_le_bytes());
-        hasher.update(name.as_bytes());
+        hash_str(&mut hasher, name);
+    }
+    let patterns = flags.patterns();
+    if !patterns.is_builtin_only() {
+        hasher.update(b"\0flags");
+        hasher.update(&(patterns.sdk_patterns.len() as u64).to_le_bytes());
+        for (function, name_arg, provider) in &patterns.sdk_patterns {
+            hash_str(&mut hasher, function);
+            hasher.update(&(*name_arg as u64).to_le_bytes());
+            hash_str(&mut hasher, provider);
+        }
+        hasher.update(&(patterns.env_prefixes.len() as u64).to_le_bytes());
+        for prefix in &patterns.env_prefixes {
+            hash_str(&mut hasher, prefix);
+        }
+        hasher.update(&[u8::from(patterns.config_object_heuristics)]);
     }
     hasher.digest()
+}
+
+fn hash_str(hasher: &mut xxhash_rust::xxh3::Xxh3, value: &str) {
+    hasher.update(&(value.len() as u32).to_le_bytes());
+    hasher.update(value.as_bytes());
 }
 
 fn resolve_cache_dir(root: &Path, configured: Option<PathBuf>) -> PathBuf {
@@ -487,6 +510,19 @@ fn resolve_boundaries(
     mut boundaries: super::boundaries::BoundaryConfig,
     root: &Path,
 ) -> ResolvedBoundaryConfig {
+    expand_boundary_preset(&mut boundaries, root);
+    let logical_groups = boundaries.expand_auto_discover(root);
+    let mut resolved = boundaries.resolve();
+    resolved.logical_groups = logical_groups;
+    resolved
+}
+
+/// Expand the boundary preset in place, with the tsconfig `rootDir` as the
+/// source root. Does nothing without a preset.
+pub(super) fn expand_boundary_preset(
+    boundaries: &mut super::boundaries::BoundaryConfig,
+    root: &Path,
+) {
     if boundaries.preset.is_some() {
         let source_root = crate::workspace::parse_tsconfig_root_dir(root)
             .filter(|r| r != "." && !r.starts_with("..") && !std::path::Path::new(r).is_absolute())
@@ -496,10 +532,6 @@ fn resolve_boundaries(
         }
         boundaries.expand(&source_root);
     }
-    let logical_groups = boundaries.expand_auto_discover(root);
-    let mut resolved = boundaries.resolve();
-    resolved.logical_groups = logical_groups;
-    resolved
 }
 
 /// Inter-file rules that a per-file override cannot change.
@@ -710,16 +742,12 @@ fn resolve_cache_settings(
     configured_max_size_mb: Option<u32>,
     override_max_size_mb: Option<u32>,
     no_cache: bool,
-    external_plugins: &[ExternalPluginDef],
+    config_hash: impl FnOnce() -> u64,
 ) -> ResolvedCacheSettings {
     ResolvedCacheSettings {
         dir: resolve_cache_dir(root, configured_dir),
         max_size_mb: override_max_size_mb.or(configured_max_size_mb),
-        config_hash: if no_cache {
-            0
-        } else {
-            cache_config_hash(external_plugins)
-        },
+        config_hash: if no_cache { 0 } else { config_hash() },
     }
 }
 
@@ -788,7 +816,7 @@ impl FallowConfig {
             self.cache.max_size_mb,
             cache_max_size_mb,
             no_cache,
-            &plugins.external_plugins,
+            || cache_config_hash(&plugins.external_plugins, &self.flags),
         );
 
         let path_policy = resolve_path_policy_settings(self.boundaries, self.overrides, &root);
@@ -819,6 +847,7 @@ impl FallowConfig {
             used_class_members: self.used_class_members,
             ignore_decorators: self.ignore_decorators,
             unused_component_props_ignore,
+            circular_dependencies: self.circular_dependencies,
             duplicates: self.duplicates,
             similar_code: self.similar_code,
             health: self.health,
@@ -883,6 +912,50 @@ mod tests {
     use crate::config::health::HealthConfig;
 
     #[test]
+    fn cache_config_hash_keys_on_user_flag_patterns() {
+        let builtin = cache_config_hash(&[], &FlagsConfig::default());
+        let with_pattern = |function: &str| FlagsConfig {
+            sdk_patterns: vec![super::super::flags::SdkPattern {
+                function: function.to_string(),
+                name_arg: 0,
+                provider: None,
+            }],
+            ..FlagsConfig::default()
+        };
+
+        assert_eq!(
+            builtin,
+            xxhash_rust::xxh3::Xxh3::new().digest(),
+            "a config without flag patterns keeps the plugin-only hash"
+        );
+        assert_ne!(builtin, cache_config_hash(&[], &with_pattern("isOn")));
+        assert_ne!(
+            cache_config_hash(&[], &with_pattern("isOn")),
+            cache_config_hash(&[], &with_pattern("isOff"))
+        );
+        assert_ne!(
+            builtin,
+            cache_config_hash(
+                &[],
+                &FlagsConfig {
+                    config_object_heuristics: true,
+                    ..FlagsConfig::default()
+                }
+            )
+        );
+        assert_ne!(
+            builtin,
+            cache_config_hash(
+                &[],
+                &FlagsConfig {
+                    env_prefixes: vec!["MYAPP_".to_string()],
+                    ..FlagsConfig::default()
+                }
+            )
+        );
+    }
+
+    #[test]
     fn overrides_deserialize() {
         let json_str = r#"{
             "overrides": [{
@@ -922,6 +995,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),
@@ -979,6 +1053,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),
@@ -1047,6 +1122,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),
@@ -1123,6 +1199,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),
@@ -1251,6 +1328,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),
@@ -1318,6 +1396,7 @@ mod tests {
             used_class_members: vec![],
             ignore_decorators: vec![],
             unused_component_props: crate::UnusedComponentPropsConfig::default(),
+            circular_dependencies: crate::CircularDependenciesConfig::default(),
             duplicates: DuplicatesConfig::default(),
             similar_code: SimilarCodeConfig::default(),
             health: HealthConfig::default(),

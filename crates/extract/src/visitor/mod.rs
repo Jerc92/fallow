@@ -490,6 +490,11 @@ pub(crate) struct ModuleInfoExtractor {
     playwright_fixture_types: FxHashMap<String, Vec<(String, String)>>,
     block_depth: u32,
     function_depth: u32,
+    /// True when the program top level is a component body, not module level.
+    /// A framework compiles a Vue `<script setup>` block, a Svelte instance
+    /// script and an Astro frontmatter into a setup or render function, so a
+    /// top-level `await import()` there runs per instance, on demand.
+    top_level_is_component_body: bool,
     /// True while walking the immediate quasi of a tagged template. Tagged
     /// templates receive raw values, so interpolation should not credit
     /// `toString` coercion for the quasi itself.
@@ -670,6 +675,8 @@ pub(crate) struct ModuleInfoExtractor {
     /// non-identifier, a spread, or a transient nested-scope local) was seen.
     /// Forces the `unprovided-inject` detector to abstain project-wide.
     has_dynamic_provide: bool,
+    /// All-action `"use server"` module flag, set in `visit_program`.
+    is_server_action_module: bool,
     /// Module-scope `const NAME = "literal"` names: a DI key bound to a string
     /// literal has STRING identity (a provider supplying the literal, often
     /// inside a package, matches it), so its `di_key_sites` are dropped at
@@ -959,6 +966,12 @@ impl ModuleInfoExtractor {
         self.template_object_locals.extend(locals);
         self.namespace_import_locals
             .extend(self.template_object_locals.iter().cloned());
+    }
+
+    /// Mark the program top level as a component body. A top-level
+    /// `await import()` then keeps its dynamic load kind.
+    pub(crate) fn set_top_level_is_component_body(&mut self, value: bool) {
+        self.top_level_is_component_body = value;
     }
 
     pub(crate) fn set_route_load_harvest_mode(&mut self, mode: RouteLoadHarvestMode) {
@@ -2913,6 +2926,7 @@ impl ModuleInfoExtractor {
             line_offsets: Vec::new(),
             complexity: Vec::new(),
             flag_uses: Vec::new(),
+            flag_registry_facts: None,
             class_heritage: self.class_heritage,
             exported_factory_returns: exported_factory_returns.into(),
             exported_factory_return_object_shapes: exported_factory_return_object_shapes.into(),
@@ -2937,6 +2951,7 @@ impl ModuleInfoExtractor {
             inline_server_action_exports: self.inline_server_action_exports,
             di_key_sites: self.di_key_sites,
             has_dynamic_provide: self.has_dynamic_provide,
+            is_server_action_module: self.is_server_action_module,
             // Populated in `release_resolution_payload`; empty at construction.
             referenced_import_bindings: Vec::new(),
             component_props: Vec::new(),

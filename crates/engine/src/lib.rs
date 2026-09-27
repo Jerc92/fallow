@@ -24,6 +24,7 @@ use std::path::Path;
 /// Finding-count and finding-identity baselines for suppressing known issues
 /// across runs.
 pub mod baseline;
+pub mod baseline_growth;
 /// Read-only inspection of the persisted extraction cache, for `fallow doctor`.
 pub mod cache_status;
 pub mod changed_files;
@@ -44,6 +45,11 @@ mod effective_severity;
 pub mod entry_weight;
 pub mod error_severity;
 mod feature_flags;
+pub mod flag_age;
+mod flag_registry;
+pub mod flag_report;
+pub mod flag_retirement;
+pub mod flag_vendor;
 pub mod flags;
 pub(crate) mod graph {
     pub use fallow_graph::graph::*;
