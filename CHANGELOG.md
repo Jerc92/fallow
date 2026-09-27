@@ -35,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value stays a leak edge. The parse cache version changes, so the first run
   after the upgrade parses every file again.
 
+- **CSS findings in Sass and Less files point at the right line.** For
+  `.scss` and `.less` files and `<style lang="scss">` and
+  `<style lang="less">` blocks in Vue and Svelte components,
+  `health --css` reported the line of a rewritten copy of the stylesheet,
+  which drops comments and blank lines. A selector on line 36 of a component could come out as line 18, so review comments
+  landed on template or script code and the changed-lines filter compared
+  the wrong lines. Rules and declarations now keep their source line and
+  column. Thanks [@Jerc92](https://github.com/Jerc92) for the contribution
+  ([#2911](https://github.com/fallow-rs/fallow/pull/2911)).
+
 ## [3.30.0] - 2026-09-26
 
 ### Added
@@ -584,16 +594,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new Waku plugin skips `_components`, `_hooks` and `_actions` the same way
   on every platform.
 
-
-- **CSS findings in Sass and Less files point at the right line.** For
-  `.scss` and `.less` files and `<style lang="scss">` and
-  `<style lang="less">` blocks in Vue and Svelte components, `health --css` reported the line of a rewritten
-  copy of the stylesheet, which drops comments and blank lines. A selector
-  on line 36 of a component could come out as line 18, so review comments
-  landed on template or script code and the changed-lines filter compared
-  the wrong lines. Rules and declarations now keep their source line and
-  column. Thanks [@Jerc92](https://github.com/Jerc92) for the contribution
-  ([#2911](https://github.com/fallow-rs/fallow/pull/2911)).
 
 ## [3.29.0] - 2026-09-25
 
