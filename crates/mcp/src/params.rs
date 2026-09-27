@@ -1446,12 +1446,12 @@ pub struct CheckRuntimeCoverageParams {
 
 /// Parameters for `get_cloud_runtime_context`, the cloud-backed sibling of
 /// `check_runtime_coverage`. There is no `coverage` path because the runtime
-/// facts come from fallow cloud, and no API-key field because the key is read
+/// facts come from Fallow Cloud, and no API-key field because the key is read
 /// from `FALLOW_API_KEY` in the server environment rather than crossing the
 /// wire on every call.
 #[derive(Default, Deserialize, JsonSchema)]
 pub struct CloudRuntimeContextParams {
-    /// Repository fallow cloud holds runtime facts for, as `owner/repo`.
+    /// Repository Fallow Cloud holds runtime facts for, as `owner/repo`.
     /// Required.
     pub repo: String,
 
@@ -1760,6 +1760,15 @@ pub struct FeatureFlagsParams {
 
     /// Parser thread count; defaults to CPU cores.
     pub threads: Option<usize>,
+
+    /// Add the `retirement` block: one row per flag with reasons, git age and evidence.
+    pub retirement: Option<bool>,
+
+    /// Offline vendor flag export for the vendor reasons; relative to `root`. Needs `retirement`.
+    pub flag_state: Option<String>,
+
+    /// Flag age: "blame" (default, lower bound), "pickaxe" or "off". Needs `retirement`.
+    pub flag_age: Option<String>,
 }
 
 /// Parameters for the `list_suppressions` governance inventory tool. Wraps

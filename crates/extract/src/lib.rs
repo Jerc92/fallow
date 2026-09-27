@@ -67,23 +67,24 @@ pub use fallow_types::extract::{
     DynamicImportInfo, DynamicImportPattern, ExportInfo, ExportName,
     ExportedObjectInstancePropertyFact, FactoryCallMemberAccessFact, FactoryFnMemberAccessFact,
     FactoryFnWholeObjectFact, FactoryReturnExport, FactoryReturnObjectPropertyAccessFact,
-    FactoryReturnObjectShapeExport, FluentChainMemberAccessFact, FluentChainNewMemberAccessFact,
-    ImportInfo, ImportedName, InstanceExportBindingFact, LocalTypeDeclaration, MemberAccess,
-    MemberInfo, MemberKind, ModuleInfo, ModuleLoadMechanism, ParseResult,
-    PlaywrightFixtureAliasFact, PlaywrightFixtureDefinitionFact, PlaywrightFixtureTypeFact,
-    PlaywrightFixtureUseFact, PublicSignatureTypeReference, QualifiedClassMemberAccessFact,
-    ReExportInfo, RequireCallInfo, RequiredTypeMemberFact, SemanticFact, SourceParseDegradation,
-    SourceReadFailure, StringEnumMemberValueFact, TypeAliasSurfaceTargetFact, TypeMemberTypeEntry,
-    TypedPropertyMemberAccessFact, VisibilityTag, VitestModuleMockAction,
-    VitestModuleMockOperationFact, compute_line_offsets,
+    FactoryReturnObjectShapeExport, FlagPatterns, FluentChainMemberAccessFact,
+    FluentChainNewMemberAccessFact, ImportInfo, ImportedName, InstanceExportBindingFact,
+    LocalTypeDeclaration, MemberAccess, MemberInfo, MemberKind, ModuleInfo, ModuleLoadMechanism,
+    ParseResult, PlaywrightFixtureAliasFact, PlaywrightFixtureDefinitionFact,
+    PlaywrightFixtureTypeFact, PlaywrightFixtureUseFact, PublicSignatureTypeReference,
+    QualifiedClassMemberAccessFact, ReExportInfo, RequireCallInfo, RequiredTypeMemberFact,
+    SemanticFact, SourceParseDegradation, SourceReadFailure, StringEnumMemberValueFact,
+    TypeAliasSurfaceTargetFact, TypeMemberTypeEntry, TypedPropertyMemberAccessFact, VisibilityTag,
+    VitestModuleMockAction, VitestModuleMockOperationFact, compute_line_offsets,
 };
 
 pub use astro::{
     extract_astro_frontmatter, extract_astro_style_regions, extract_astro_template_regions,
 };
 pub use css::{
-    ThemeScan, ThemeTokenDef, extract_apply_tokens, extract_apply_tokens_located,
-    extract_css_module_exports, extract_css_var_reads_located, scan_theme_blocks,
+    StylesheetTokens, ThemeScan, ThemeTokenDef, extract_apply_tokens, extract_apply_tokens_located,
+    extract_css_module_exports, extract_css_var_reads_located, scan_stylesheet_tokens,
+    scan_theme_blocks,
 };
 pub use css_classes::{
     MarkupClassScan, MarkupClassToken, is_edit_distance_one, is_typo_edit, scan_markup_class_tokens,
@@ -115,7 +116,7 @@ fn static_regex(pattern: &str) -> regex::Regex {
     regex::Regex::new(pattern).expect("static regex pattern should compile")
 }
 
-pub use parse::parse_source_to_module;
+pub use parse::{parse_source_to_module, parse_source_to_module_with_flags};
 
 /// Leading UTF-8 byte order mark codepoint.
 ///
@@ -149,12 +150,22 @@ fn strip_bom(source: &str) -> &str {
 /// When `need_complexity` is true, per-function cyclomatic/cognitive complexity
 /// metrics are computed during parsing (needed by the `health` command).
 /// Pass `false` for dead-code analysis where complexity data is unused.
+///
+/// Flag detection uses the built-in patterns only. A caller with a resolved
+/// config uses [`parse_all_files_cancellable`] with the config's patterns,
+/// because the cache keys on them.
 pub fn parse_all_files(
     files: &[DiscoveredFile],
     cache: Option<&CacheStore>,
     need_complexity: bool,
 ) -> ParseResult {
-    parse_all_files_cancellable(files, cache, need_complexity, None)
+    parse_all_files_cancellable(
+        files,
+        cache,
+        need_complexity,
+        None,
+        &FlagPatterns::default(),
+    )
 }
 
 /// Parse all files, abandoning the remaining ones once `cancellation` is set.
@@ -165,17 +176,21 @@ pub fn parse_all_files(
 /// [`ParseResult`] is therefore truncated whenever the token flipped, and
 /// callers must treat a set token as a failed run rather than as a project
 /// with fewer modules.
+///
+/// `flag_patterns` are the user flag patterns that detection applies on top
+/// of the built-in ones. They must match the patterns the cache was keyed on.
 pub fn parse_all_files_cancellable(
     files: &[DiscoveredFile],
     cache: Option<&CacheStore>,
     need_complexity: bool,
     cancellation: Option<&AtomicBool>,
+    flag_patterns: &FlagPatterns,
 ) -> ParseResult {
     let parse_one = |file: &DiscoveredFile| {
         if cancellation.is_some_and(|cancelled| cancelled.load(Ordering::SeqCst)) {
             return ParseFileResult::default();
         }
-        parse_single_file_cached(file, cache, need_complexity)
+        parse_single_file_cached(file, cache, need_complexity, flag_patterns)
     };
     let results: Vec<ParseFileResult> = if files.len() <= PARALLEL_PARSE_FILE_THRESHOLD {
         files.iter().map(parse_one).collect()
@@ -191,6 +206,7 @@ pub fn parse_all_files_cancellable(
     let mut parse_cpu_nanos = 0u64;
     let mut files_read = 0u64;
     let mut source_bytes_read = 0u64;
+    let mut css_masked_bytes = 0u64;
 
     // `results` is a positional map over `files`, so zipping recovers the path
     // for a module without carrying one on `ModuleInfo`.
@@ -202,6 +218,7 @@ pub fn parse_all_files_cancellable(
             files_read += 1;
             source_bytes_read += bytes;
         }
+        css_masked_bytes += result.css_masked_bytes;
         if let Some(module) = result.module {
             if module.parse_error_count > 0 {
                 parse_degradations.push(SourceParseDegradation {
@@ -235,6 +252,7 @@ pub fn parse_all_files_cancellable(
         parse_cpu_ms: parse_cpu_nanos as f64 / 1_000_000.0,
         files_read,
         source_bytes_read,
+        css_masked_bytes,
     }
 }
 
@@ -248,6 +266,8 @@ struct ParseFileResult {
     /// Source bytes read from disk for this file, or `None` when the file was
     /// served from cache metadata without a read.
     source_bytes_read: Option<u64>,
+    /// Source bytes that the CSS comment mask read during the parse.
+    css_masked_bytes: u64,
 }
 
 impl ParseFileResult {
@@ -259,6 +279,7 @@ impl ParseFileResult {
             cache_misses: 0,
             parse_cpu_nanos: 0,
             source_bytes_read: None,
+            css_masked_bytes: 0,
         }
     }
 
@@ -270,6 +291,7 @@ impl ParseFileResult {
             cache_misses: 1,
             parse_cpu_nanos,
             source_bytes_read: None,
+            css_masked_bytes: 0,
         }
     }
 
@@ -290,6 +312,7 @@ impl ParseFileResult {
             cache_misses: 0,
             parse_cpu_nanos: 0,
             source_bytes_read: None,
+            css_masked_bytes: 0,
         }
     }
 }
@@ -316,6 +339,7 @@ fn parse_single_file_cached(
     file: &DiscoveredFile,
     cache: Option<&CacheStore>,
     need_complexity: bool,
+    flag_patterns: &FlagPatterns,
 ) -> ParseFileResult {
     let cached_by_path = cache.and_then(|store| store.get_by_path_only(&file.path));
 
@@ -364,9 +388,21 @@ fn parse_single_file_cached(
     }
 
     let parse_start = std::time::Instant::now();
-    let module = parse_source_to_module(file.id, &file.path, source, content_hash, need_complexity);
+    // Drop a count that a scan outside a parse left on this thread.
+    css::take_comment_masked_bytes();
+    let module = parse_source_to_module_with_flags(
+        file.id,
+        &file.path,
+        source,
+        content_hash,
+        need_complexity,
+        flag_patterns,
+    );
     let parse_cpu_nanos = u64::try_from(parse_start.elapsed().as_nanos()).unwrap_or(u64::MAX);
-    ParseFileResult::cache_miss(module, parse_cpu_nanos).with_source_bytes_read(raw.len())
+    let mut result =
+        ParseFileResult::cache_miss(module, parse_cpu_nanos).with_source_bytes_read(raw.len());
+    result.css_masked_bytes = css::take_comment_masked_bytes();
+    result
 }
 
 /// Parse a single file and extract module information (without complexity).

@@ -58,6 +58,7 @@ mod exit_codes;
 pub mod explain;
 mod fix;
 mod flags;
+mod flags_retirement_formats;
 mod gates;
 mod guard;
 mod health;
@@ -1244,7 +1245,8 @@ enum Command {
         /// before the entry runs, the modules behind `import()` and behind
         /// workers or forks, the packages on the startup path, and the single
         /// imports that keep the most bytes eager. Source bytes include types
-        /// and comments.
+        /// and comments. An import without the `type` keyword counts as eager,
+        /// even when it brings in only types that TypeScript removes.
         #[arg(long)]
         entry_weight: bool,
 
@@ -1557,6 +1559,49 @@ enum Command {
         /// Show only the top N flags
         #[arg(long)]
         top: Option<usize>,
+
+        /// Add a retirement report: one row per flag, with the reasons the
+        /// flag can be retired. Advisory only; nothing is removed.
+        #[arg(long)]
+        retirement: bool,
+
+        /// Keep only retirement rows with this reason (repeatable)
+        #[arg(long = "reason", value_name = "CODE", requires = "retirement")]
+        reasons: Vec<flags::RetirementReasonArg>,
+
+        /// Order of the retirement rows
+        #[arg(
+            long,
+            value_name = "KEY",
+            requires = "retirement",
+            default_value = "age"
+        )]
+        sort: flags::RetirementSortArg,
+
+        /// How to measure flag age: blame (lower bound), pickaxe (first
+        /// commit with the name, slower) or off
+        #[arg(
+            long,
+            value_name = "MODE",
+            requires = "retirement",
+            default_value = "blame"
+        )]
+        flag_age: flags::FlagAgeArg,
+
+        /// Keep only retirement rows at least this many days old
+        #[arg(long, value_name = "DAYS", requires = "retirement")]
+        min_age: Option<u64>,
+
+        /// Vendor flag export (JSON, read offline) that adds the
+        /// fully-rolled-out, archived-in-vendor, missing-in-vendor and
+        /// vendor-only reasons
+        #[arg(long, value_name = "FILE", requires = "retirement")]
+        flag_state: Option<std::path::PathBuf>,
+
+        /// Exit with code 1 when a flag in scope is older than this many
+        /// days. Opt-in; needs a flag age
+        #[arg(long, value_name = "DAYS", requires = "retirement")]
+        max_flag_age: Option<u64>,
     },
 
     /// List active fallow-ignore suppression markers (read-only inventory)
@@ -2148,7 +2193,7 @@ enum LicenseCli {
     /// missing, or the cloud reports it as too stale to exchange, the request
     /// is retried with a full-access API key.
     Refresh {
-        /// Fallow cloud API key (bearer token) used when the stored license
+        /// Fallow Cloud API key (bearer token) used when the stored license
         /// JWT cannot be refreshed.
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
@@ -2224,15 +2269,15 @@ enum CoverageCli {
         #[arg(long, value_name = "PATH", conflicts_with = "cloud")]
         runtime_coverage: Option<PathBuf>,
 
-        /// Fetch latest runtime facts from fallow cloud for the selected repo.
+        /// Fetch latest runtime facts from Fallow Cloud for the selected repo.
         #[arg(long, visible_alias = "runtime-coverage-cloud")]
         cloud: bool,
 
-        /// Fallow cloud API key. Precedence: this flag > $FALLOW_API_KEY.
+        /// Fallow Cloud API key. Precedence: this flag > $FALLOW_API_KEY.
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         #[arg(long, value_name = "URL")]
         api_endpoint: Option<String>,
 
@@ -2292,18 +2337,18 @@ enum CoverageCli {
         #[arg(long)]
         debug_unmatched: bool,
     },
-    /// Upload a static function inventory to fallow cloud. Needs a fallow
+    /// Upload a static function inventory to Fallow Cloud. Needs a fallow
     /// cloud API key. Unlocks the `untracked` filter on the dashboard by
     /// pairing runtime coverage data with the AST view of "every function
     /// that exists". See <https://docs.fallow.tools/analysis/runtime-coverage>.
     ///
-    /// This command makes network calls to fallow cloud. `fallow dead-code`
+    /// This command makes network calls to Fallow Cloud. `fallow dead-code`
     /// stays offline.
     ///
     /// Exit codes: 0 ok · 7 network · 10 validation · 11 payload too large
     /// · 12 auth rejected · 13 server error.
     UploadInventory {
-        /// Fallow cloud API key (bearer token).
+        /// Fallow Cloud API key (bearer token).
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
         /// <https://fallow.cloud/settings#api-keys>.
@@ -2314,7 +2359,7 @@ enum CoverageCli {
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         ///
         /// Useful for staging and on-premise deployments. Also respects
         /// $FALLOW_API_URL when this flag is not set.
@@ -2382,7 +2427,7 @@ enum CoverageCli {
         #[arg(long)]
         ignore_upload_errors: bool,
     },
-    /// Upload JavaScript source maps to fallow cloud for bundled runtime coverage.
+    /// Upload JavaScript source maps to Fallow Cloud for bundled runtime coverage.
     ///
     /// Scans a build output directory for `.map` files and uploads them under
     /// the selected repo + git SHA. The production beacon reports bundled
@@ -2422,7 +2467,7 @@ enum CoverageCli {
         #[arg(long, value_name = "SHA")]
         git_sha: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         #[arg(long, value_name = "URL")]
         endpoint: Option<String>,
 
@@ -2445,14 +2490,14 @@ enum CoverageCli {
         #[arg(long)]
         fail_fast: bool,
     },
-    /// Upload static dead-code findings to fallow cloud for the source-evidence viewer.
+    /// Upload static dead-code findings to Fallow Cloud for the source-evidence viewer.
     ///
     /// Runs fallow's static analysis and uploads the `unused_export` and
     /// `dead_file` verdicts under the selected repo + git SHA. The cloud
     /// overlays them on the source view alongside the runtime coverage overlay.
     /// Findings are replace-by-SHA: each run sends the complete set for the SHA.
     UploadStaticFindings {
-        /// Fallow cloud API key (bearer token).
+        /// Fallow Cloud API key (bearer token).
         ///
         /// Precedence: this flag > $FALLOW_API_KEY. Generate at
         /// <https://fallow.cloud/settings#api-keys>. This must be a live API
@@ -2464,7 +2509,7 @@ enum CoverageCli {
         #[arg(long, value_name = "KEY")]
         api_key: Option<String>,
 
-        /// Override the fallow cloud base URL.
+        /// Override the Fallow Cloud base URL.
         ///
         /// Useful for staging and on-premise deployments. Also respects
         /// $FALLOW_API_URL when this flag is not set.
@@ -3967,7 +4012,27 @@ fn dispatch_subcommand(command: Command, dispatch: &DispatchContext<'_>) -> Exit
         }
         dupes @ Command::Dupes { .. } => dispatch_dupes_command(dupes, dispatch),
         health @ Command::Health { .. } => dispatch_health_command(health, dispatch),
-        Command::Flags { top } => dispatch_flags_command(dispatch, top),
+        Command::Flags {
+            top,
+            retirement,
+            reasons,
+            sort,
+            flag_age,
+            min_age,
+            flag_state,
+            max_flag_age,
+        } => dispatch_flags_command(
+            dispatch,
+            top,
+            retirement.then_some(flags::RetirementArgs {
+                reasons,
+                sort,
+                flag_age,
+                min_age,
+                flag_state,
+                max_flag_age,
+            }),
+        ),
         Command::Suppressions { file } => dispatch_suppressions_command(dispatch, &file),
         Command::Explain { issue_type } => {
             explain::run_explain(&issue_type.join(" "), output, dispatch.json_style)
@@ -5134,7 +5199,11 @@ fn dispatch_audit_cache_command(
     }
 }
 
-fn dispatch_flags_command(dispatch: &DispatchContext<'_>, top: Option<usize>) -> ExitCode {
+fn dispatch_flags_command(
+    dispatch: &DispatchContext<'_>,
+    top: Option<usize>,
+    retirement: Option<flags::RetirementArgs>,
+) -> ExitCode {
     let cli = dispatch.cli;
     let root = dispatch.root;
     let output = dispatch.output;
@@ -5159,7 +5228,25 @@ fn dispatch_flags_command(dispatch: &DispatchContext<'_>, top: Option<usize>) ->
         changed_since: cli.changed_since.as_deref(),
         explain: cli.explain,
         top,
+        retirement,
+        regression: dispatch.regression_opts(false),
+        regression_flag: first_regression_flag(cli),
     })
+}
+
+/// The first regression-gate option on the command line, if any.
+fn first_regression_flag(cli: &Cli) -> Option<&'static str> {
+    [
+        (cli.fail_on_regression, "--fail-on-regression"),
+        (cli.regression_baseline.is_some(), "--regression-baseline"),
+        (
+            cli.save_regression_baseline.is_some(),
+            "--save-regression-baseline",
+        ),
+        (cli.tolerance != "0", "--tolerance"),
+    ]
+    .into_iter()
+    .find_map(|(used, flag)| used.then_some(flag))
 }
 
 fn dispatch_suppressions_command(
@@ -5695,11 +5782,30 @@ fn dispatch_fix(dispatch: &DispatchContext<'_>, args: &FixDispatchArgs) -> ExitC
 
 fn dispatch_list(dispatch: &DispatchContext<'_>, args: &ListDispatchArgs) -> ExitCode {
     let cli = dispatch.cli;
-    let tolerance = match regression::Tolerance::parse(&cli.tolerance) {
-        Ok(tolerance) => tolerance,
-        Err(message) => return emit_error(&message, 2, dispatch.output),
-    };
     let (save_regression_file, save_to_config) = regression_save_targets(cli);
+    // Only the entry weight gate reads the global `--tolerance`, so a plain
+    // listing does not fail on a value it never uses.
+    let entry_weight_gate = if args.entry_weight {
+        let tolerance = match regression::Tolerance::parse(&cli.tolerance) {
+            Ok(tolerance) => tolerance,
+            Err(message) => {
+                return emit_error(
+                    &format!("invalid --tolerance: {message}"),
+                    2,
+                    dispatch.output,
+                );
+            }
+        };
+        Some(regression::EntryWeightGate {
+            fail_on_regression: cli.fail_on_regression,
+            tolerance,
+            baseline_file: cli.regression_baseline.as_deref(),
+            save_file: save_regression_file.as_deref(),
+            save_to_config,
+        })
+    } else {
+        None
+    };
     let production = match dispatch.production_for(fallow_config::ProductionAnalysis::DeadCode) {
         Ok(production) => production,
         Err(code) => return code,
@@ -5717,13 +5823,7 @@ fn dispatch_list(dispatch: &DispatchContext<'_>, args: &ListDispatchArgs) -> Exi
         boundaries: args.boundaries,
         workspaces: args.workspaces,
         entry_weight: args.entry_weight,
-        entry_weight_gate: Some(regression::EntryWeightGate {
-            fail_on_regression: cli.fail_on_regression,
-            tolerance,
-            baseline_file: cli.regression_baseline.as_deref(),
-            save_file: save_regression_file.as_deref(),
-            save_to_config,
-        }),
+        entry_weight_gate,
         production,
         allow_remote_extends: cli.allow_remote_extends,
         scope: args.scope.clone(),

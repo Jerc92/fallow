@@ -1,6 +1,6 @@
 {
   "name": "fallow",
-  "version": "3.29.0",
+  "version": "3.30.0",
   "manifest_version": "1",
   "description": "Codebase analyzer for TypeScript/JavaScript: unused code, circular dependencies, code duplication, complexity hotspots, and architecture boundary violations",
   "global_flags": [
@@ -1742,6 +1742,77 @@
           "type": "string",
           "required": false,
           "description": "Show only the top N flags"
+        },
+        {
+          "name": "--retirement",
+          "type": "bool",
+          "required": false,
+          "description": "Add a retirement report: one row per flag, with the reasons the flag can be retired. Advisory only; nothing is removed",
+          "possible_values": [
+            "true",
+            "false"
+          ]
+        },
+        {
+          "name": "--reason",
+          "type": "string",
+          "required": false,
+          "description": "Keep only retirement rows with this reason (repeatable)",
+          "possible_values": [
+            "single-read-site",
+            "test-only",
+            "literal-constant",
+            "identical-branches",
+            "empty-branch",
+            "guards-dead-code",
+            "defined-never-read",
+            "fully-rolled-out",
+            "archived-in-vendor",
+            "missing-in-vendor",
+            "vendor-only"
+          ]
+        },
+        {
+          "name": "--sort",
+          "type": "string",
+          "required": false,
+          "description": "Order of the retirement rows",
+          "default": "age",
+          "possible_values": [
+            "age",
+            "sites",
+            "name"
+          ]
+        },
+        {
+          "name": "--flag-age",
+          "type": "string",
+          "required": false,
+          "description": "How to measure flag age: blame (lower bound), pickaxe (first commit with the name, slower) or off",
+          "default": "blame",
+          "possible_values": [
+            "blame",
+            "pickaxe",
+            "off"
+          ]
+        },
+        {
+          "name": "--min-age",
+          "type": "string",
+          "required": false,
+          "description": "Keep only retirement rows at least this many days old"
+        },
+        {
+          "name": "--flag-state",
+          "type": "string",
+          "required": false,
+          "description": "Vendor flag export (JSON, read offline) that adds the fully-rolled-out, archived-in-vendor, missing-in-vendor and vendor-only reasons"
+        },
+        {
+          "name": "--max-flag-age",
+          "type": "string",
+          "required": false,
+          "description": "Exit with code 1 when a flag in scope is older than this many days. Opt-in; needs a flag age"
         }
       ]
     },
@@ -4693,6 +4764,36 @@
       "docs_url": "https://docs.fallow.tools/cli/flags"
     },
     {
+      "id": "flag-retirement-candidate",
+      "rule_id": "fallow/flag-retirement-candidate",
+      "command": "flags",
+      "category": "Flags",
+      "description": "Feature flag is a retirement candidate",
+      "label": null,
+      "config_key": null,
+      "registry_index": null,
+      "aliases": [],
+      "lsp": false,
+      "filter_flag": null,
+      "result_key": null,
+      "summary_label": null,
+      "summary_docs_anchor": null,
+      "sarif_rule_ids": null,
+      "codeclimate_check_names": null,
+      "ts_alias": null,
+      "counts_in_total": false,
+      "fixable": false,
+      "suppressible": false,
+      "suppress_comment": null,
+      "default_severity": null,
+      "opt_in": null,
+      "frameworks": [],
+      "note": null,
+      "license": "free",
+      "license_note": null,
+      "docs_url": "https://docs.fallow.tools/cli/flags#retirement-report"
+    },
+    {
       "id": "tainted-sink",
       "rule_id": "security/tainted-sink",
       "command": "security",
@@ -6200,16 +6301,16 @@
     "FALLOW_AUDIT_CACHE_MAX_AGE_DAYS": "GC threshold in days for reusable audit base-snapshot caches (default 30; 0 disables the sweep).",
     "FALLOW_IMPACT_STORE_MAX_AGE_DAYS": "GC threshold in days for per-project fallow impact stores; a recorded run reclaims stores older than this (unset/0 keeps every store forever).",
     "FALLOW_ROOT": "Project root used by the review-github/review-gitlab renderers to read source for suggestion blocks. Set it alongside --root when rendering review formats outside the bundled CI integrations.",
-    "FALLOW_LICENSE": "License JWT (full string) for the paid runtime intelligence layer; intended for shared CI runners.",
+    "FALLOW_LICENSE": "License JWT (full string) for Fallow Cloud, the paid product; intended for shared CI runners.",
     "FALLOW_LICENSE_PATH": "File path containing the license JWT.",
     "FALLOW_LICENSE_SKEW_TOLERANCE_SECONDS": "Clock-skew tolerance applied to the license JWT's iat claim (default 86400).",
     "FALLOW_COV_BIN": "Explicit path override for the fallow-cov runtime-coverage sidecar binary.",
     "FALLOW_COV_BINARY_PATH": "Secondary explicit path override for the fallow-cov sidecar, checked after FALLOW_COV_BIN (air-gapped installs, distro-packaged sidecars, shared Docker images).",
     "FALLOW_RUNTIME_COVERAGE_SOURCE": "Set to cloud to select cloud runtime coverage in fallow coverage analyze without passing --cloud.",
     "FALLOW_REPO": "owner/repo fallback for fallow coverage analyze --cloud when --repo is not passed (otherwise parsed from the git origin remote).",
-    "FALLOW_API_URL": "Base URL override for fallow cloud API calls (license refresh, trial, coverage uploads).",
-    "FALLOW_API_KEY": "fallow cloud bearer token for coverage upload commands, and the fallback bearer for fallow license refresh when the stored license JWT is missing or too stale.",
-    "FALLOW_CA_BUNDLE": "Path to a PEM certificate bundle for fallow cloud and provider HTTP calls (replaces the default WebPKI roots).",
+    "FALLOW_API_URL": "Base URL override for Fallow Cloud API calls (license refresh, trial, coverage uploads).",
+    "FALLOW_API_KEY": "Fallow Cloud bearer token for coverage upload commands, and the fallback bearer for fallow license refresh when the stored license JWT is missing or too stale.",
+    "FALLOW_CA_BUNDLE": "Path to a PEM certificate bundle for Fallow Cloud and provider HTTP calls (replaces the default WebPKI roots).",
     "FALLOW_UPDATE_CHECK": "Set to off/0/false to disable the human-TTY upgrade nudge and its background version check.",
     "FALLOW_SUGGESTIONS": "Set to off/0/false/no/disabled to suppress the next_steps[] array of read-only follow-up commands in JSON output (and the human Next: line). Useful for CI consumers that snapshot-diff raw --format json output. Default on.",
     "FALLOW_TELEMETRY": "Opt-in telemetry mode: off, on, or inspect (print the payload to stderr without sending). Telemetry is off by default.",
@@ -6940,7 +7041,7 @@
       {
         "name": "get_cloud_runtime_context",
         "kind": "runtime-coverage",
-        "description": "Runtime coverage pulled from fallow cloud for a repository, merged into the same runtime_coverage block the local runtime-coverage tools return",
+        "description": "Runtime coverage pulled from Fallow Cloud for a repository, merged into the same runtime_coverage block the local runtime-coverage tools return",
         "cli_command": "fallow coverage analyze --cloud --repo <owner/repo> --format json --quiet",
         "key_params": [
           "repo",
@@ -6950,7 +7051,7 @@
           "top"
         ],
         "license": "freemium",
-        "license_note": "Reading runtime coverage from fallow cloud needs a FALLOW_API_KEY for an org on the Team tier; the cloud refuses the request otherwise. No local license is involved.",
+        "license_note": "Reading runtime coverage from Fallow Cloud needs a FALLOW_API_KEY for an org on the Team tier; the cloud refuses the request otherwise. No local license is involved.",
         "read_only": true,
         "code_mode_alias": null
       },
@@ -7353,7 +7454,7 @@
     ]
   },
   "plugins": {
-    "count": 127,
+    "count": 128,
     "note": "Built-in framework plugins, auto-activated when their enabler dependency is present; run fallow list --plugins for the set active in a specific project",
     "names": [
       "nextjs",
@@ -7367,6 +7468,7 @@
       "react-router",
       "redwoodsdk",
       "tanstack-router",
+      "waku",
       "react-native",
       "expo",
       "expo-router",

@@ -7,8 +7,225 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`FALLOW_SUGGESTIONS=off` also skips the git probes of the next steps.**
+  Before, `dead-code`, `dupes`, `health` and the combined run still started
+  `git` to decide on the `audit-changed` and `scope-workspaces` steps, and
+  then did not show them. Now a run with suggestions off starts no process
+  for its next steps.
+
+### Fixed
+
+- **`client-server-leak` stops at Server Action modules (#2941).** A
+  `"use client"` file that calls a Server Action no longer gets a finding
+  for code behind the action. The bundler replaces the import with an
+  action reference, so that code stays on the server. This applies to a
+  `"use server"` module whose value exports are all async functions. Before,
+  such a client got an env-secret finding when code behind the action read a
+  non-public env var. With `import "server-only"` in the action file, it
+  also got a `server-only-import` finding. A `"use server"` module with a
+  different value export, such as a top-level `const`, a re-export or a
+  default value, stays in the cone, because that export ships to the
+  client.
+- **`client-server-leak` skips an import that names only type exports
+  (#2941).** `import { Props } from "./x"`, where `x` exports
+  `interface Props`, is erased at build time, the same as `import type`. Such
+  an import no longer carries a finding. An import that also names a runtime
+  value stays a leak edge. The parse cache version changes, so the first run
+  after the upgrade parses every file again.
+
+## [3.30.0] - 2026-09-26
+
 ### Added
 
+- **`fallow flags --retirement` reports flags that you can retire.** The
+  option adds one row per flag. A row groups every site of the flag and
+  lists the reasons to remove the flag. The flag identity is the detection
+  kind, the SDK provider, the flag name and, in a monorepo, the workspace
+  root. These reasons are available:
+  - `single-read-site`: the flag has one read site.
+  - `test-only`: every read site is in a test, story or mock file.
+  - `literal-constant`: the flag is a module-level `const` with a flag
+    prefix and a literal value, such as `const FEATURE_NEW_UI = true`, and
+    a guard in the same module tests it. These flags have the new kind
+    `constant`. They are in the retirement report only, not in
+    `feature_flags[]`. The binding must be the value of the test, as in
+    `if (FEATURE_X)` or `if (FEATURE_X === 'on')`, not an argument inside
+    it. A `let` binding, a value from a function call and a shadowed name
+    do not count.
+  - `identical-branches`: both branches of the guard are the same code.
+    The check ignores whitespace and comments. It covers `if`/`else` and
+    ternaries.
+  - `empty-branch`: no branch of the guard holds code, so the flag does
+    nothing. Examples are `if (flag) {}` and `flag ? null : <></>`. An
+    empty branch is `{}`, `;`, `null`, `undefined`, `void 0`, `<></>`, or
+    `false` next to JSX. A missing `else` is also empty. A guard with code
+    in one branch does not count. Thus `flag ? <New /> : null` and
+    `flag ? null : <Old />` are plain gating.
+  - `guards-dead-code`: the guarded block holds unused exports.
+  - `defined-never-read`: the flag is defined, but no code reads it. This
+    covers a Vercel `flag()` definition in a `const` when the dead-code
+    analysis reports its export as unused. A file that no entry point
+    reaches does not count. A definition site has `role: "definition"` and
+    is not a read site.
+
+    The reason also covers an unused member of an exported enum that is a
+    flag registry. An enum is a flag registry when its name holds `flag`,
+    `feature`, `toggle`, `experiment` or `gate`. An enum is also a flag
+    registry when the scan reads one of its keys as a flag. A key that any
+    flag site reads by name does not get the reason.
+
+  `single-read-site`, `test-only` and `defined-never-read` count every read
+  of the flag in the project. Reads in other workspaces and reads outside
+  `--changed-since` or `--workspace` also count.
+
+  The reasons come from the code only. They do not show that the flag is
+  on or off in production. The parse cache version changes, so the first
+  run after the upgrade parses every file again.
+
+  Each row also gives the age of the flag from git. `--flag-age blame`
+  (the default) runs `git blame` on the flag sites. The age then counts
+  from the oldest line that still holds the flag, so it is a lower bound.
+  `--flag-age pickaxe` runs `git log -S` for each flag name. It sets
+  `first_seen` to the first commit that added the name, but it is slower.
+  `--flag-age off` measures no age.
+
+  Ages count days to the analysis clock (the HEAD commit time, or
+  `FALLOW_CLOCK_EPOCH`). Thus two runs on one commit give the same ages.
+  The results go into a cache for the current HEAD. In a shallow clone the
+  age is `null`, and the new `flag-age-shallow-clone` diagnostic tells you
+  why. Outside a git repository, or on a branch without commits, the new
+  `flag-age-unavailable` diagnostic does the same. In these cases
+  `generated_at_clock` is also `null`.
+
+  The report is advisory. Every action has `auto_fixable: false`, and
+  Fallow does not remove code. The JSON output adds a top-level
+  `retirement` object with `summary` and `flags`. A row with an empty
+  `reasons` array is not a candidate. The human output adds a "Retirement
+  candidates" section. The option supports every format of
+  `fallow flags`. The per-site output of each format does not change, and
+  the candidates come after it:
+  - compact: one `flag-retire:<reason>:<path>:<line>:<name>` line for each
+    reason.
+  - SARIF: the new rule `fallow/flag-retirement-candidate` at level `note`,
+    with one result for each candidate at its first read site.
+  - CodeClimate: one `fallow/flag-retirement` issue with severity `info`
+    for each reason. The fingerprint comes from the flag identity and the
+    reason, not from the line.
+  - markdown: a "Retirement candidates" table with the flag, the age, the
+    read sites and the reasons.
+
+  `fallow explain flag-retirement` describes the new rule.
+
+  `--reason <CODE>` keeps the rows with that reason, and you can give it
+  more than one time. `--min-age <DAYS>` keeps the flags that are at least
+  that old. `--min-age` does not work with `--flag-age off`, and the
+  command then exits with code 2. `--sort age|sites|name` sets the row
+  order. `--top` limits the JSON rows and the candidates in the human
+  section.
+
+  Without `--retirement`, the output does not change and `schema_version`
+  stays at 8.
+- **`fallow flags --retirement --flag-state <FILE>` reads a vendor flag
+  export.** The file is a local JSON file with one vendor-neutral schema:
+  `schema_version` (1), `source`, `exported_at` and a `flags` array. Each
+  flag has a `key` and a `state` (`on`, `off`, `rolled_out`, `archived` or
+  `experiment`). The optional fields are `serves_single_variation`,
+  `created_at` and `last_evaluated_at`. Fallow reads the file offline. It
+  uses no credentials and makes no network calls. The docs give a `jq`
+  recipe for each common vendor. The export adds these reasons:
+  - `fully-rolled-out`: the state is `rolled_out`, or the flag serves one
+    variation.
+  - `archived-in-vendor`: the state is `archived`.
+  - `missing-in-vendor`: the code reads the flag, but the export does not
+    hold its key. This can be a stale key or a typo.
+  - `vendor-only`: the export holds the key, but no code in the project
+    reads it. The row has the new kind `vendor_export` and no sites. Its
+    evidence points at the line of the key in the export. A run with
+    `--changed-since` or `--workspace` adds no `vendor-only` rows. These
+    rows do not count in `summary.distinct_flags`, so a key that is added
+    in the vendor only does not change the flag count of the code.
+
+  Only SDK flags match the export. When the `source` names an SDK in the
+  project, such as `launchdarkly` for `LaunchDarkly`, the flags of other
+  SDKs do not match. This check reads every SDK site of the project, so a
+  run with `--changed-since` or `--workspace` gives the same result for a
+  flag as a full run. When the export file is outside the project root,
+  the output shows its file name only, not an absolute path. The new
+  `flags.vendorKeyPrefix` config key removes a
+  prefix from each vendor key before the match. The report adds a
+  `vendor_state` object with `source`, `exported_at`, `export_age_days`
+  and `flags`. A row with a key in the export adds a `vendor` object. The
+  human output warns when the export is more than 30 days old. A file that
+  is not valid, or that is larger than 16 MiB, stops the run with exit
+  code 2 and the error code `FALLOW_FLAG_STATE_INVALID`.
+- **`fallow flags --retirement` can gate CI on the flag counts.** The
+  regression options now work on `fallow flags`, but only together with
+  `--retirement`:
+  - `--save-regression-baseline <PATH>` writes a baseline file with a new
+    `flags` section: `total_flags`, `distinct_flags` and a count for each
+    reason. The command needs a PATH, because the config file holds no
+    flags baseline.
+  - `--fail-on-regression --regression-baseline <PATH>` exits with code 1
+    when `distinct_flags` grows more than `--tolerance`. Each `--reason`
+    code adds the count of that reason to the gate.
+  - `--max-flag-age <DAYS>` exits with code 1 when a flag in scope is older
+    than that many days. It is opt-in, and it does not work with
+    `--flag-age off`. Without git history (a shallow clone or no
+    repository), Fallow measures no age. The gate then has the status
+    `skipped`, prints a warning, and does not fail the run. Use
+    `fetch-depth: 0` in GitHub Actions to get the full history. The
+    `unmeasured` field counts the flags in scope without an age.
+
+  The JSON `retirement` object adds `regression` and `max_flag_age` when
+  these gates run. Each gate has a `status`: `pass`, `exceeded` or
+  `skipped`. The verdict of each gate prints to stderr in every output
+  format, so a run that exits with code 1 always tells you why. A run with `--changed-since` or `--workspace` skips the
+  regression gate and saves no baseline. Without `--retirement`, the
+  regression options still have no effect on `fallow flags`, and the exit
+  code stays 0. The command now prints a warning in that case. Older
+  Fallow versions read the new baseline files, because they ignore the
+  `flags` section.
+- **The MCP `feature_flags` tool and the programmatic API can return the
+  retirement report.** The MCP tool adds the `retirement`, `flag_state` and
+  `flag_age` parameters. A relative `flag_state` path resolves against
+  `root`. `FeatureFlagsOptions` in the Rust API adds a `retirement` field.
+  The CLI and the API now build the report with the same engine function,
+  so the `retirement` block is the same on both surfaces. An invalid
+  `flag_state` file gives the error code `FALLOW_FLAG_STATE_INVALID`. The
+  regression gates stay CLI only.
+- **`fallow flags` finds more flag reads.** The scan now reports these
+  shapes:
+  - `import.meta.env.X` reads, with the same prefixes as `process.env.X`.
+    The `flags.envPrefixes` config key applies to both.
+  - SDK calls whose flag name is a member of a registry, such as
+    `useFlag(FLAGS.NewCheckout)` or `useFlag(FLAGS['NewCheckout'])`. The
+    registry is a module-level `as const` object or an enum with string
+    values. It can be local or imported. An import through a path alias or
+    a barrel file resolves when exactly one registry in the project has
+    that name. An import from a declared dependency does not resolve to a
+    project registry. A parameter or a local binding with the name of a
+    registry is not a registry.
+  - Flag reads inside a larger `if` or ternary test. This applies to
+    environment variables, such as `if (process.env.FEATURE_X === 'true')`,
+    and to SDK calls, such as `if (variation('beta', false) === true)`.
+    With `flags.configObjectHeuristics` on, it also applies to config
+    objects, such as `if (config.features.beta === 'on')`. With the default
+    config, this shape gives the most new findings.
+  - Flags in `.js` files with JSX, with custom `sdkPatterns` and
+    `envPrefixes`. Before, the second parse for these patterns read such a
+    file as plain JavaScript and did not find its flags.
+  - Calls to a custom `sdkPatterns` function whose flag name is a member of
+    an imported registry, such as `isFeatureActive(KEYS.Beta)`.
+
+  More flag reads now have a guard, so `dead_code_overlap` can find more
+  unused exports. `flag && <X />` in JSX guards the JSX. A `const` binding
+  that holds one flag read, such as `const enabled = useFlag('beta')`,
+  takes the guard of the first `if`, ternary or JSX `&&` that tests it.
+  `if (!flag) return` guards the rest of the enclosing block, not only the
+  `if` statement. The parse cache version changes, so the first run after
+  the upgrade parses every file again.
 - **The language server can parse the project before the first open.** Set
   the initialization option `prewarm` to `true`. At `initialized`, the
   server then loads the project session and parses the files, but analyzes
@@ -19,6 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `counters` object. It has these counts:
   - the source files and the bytes that the run read,
   - the parse cache bytes that the run read,
+  - the stylesheet bytes that the CSS comment mask read,
   - the specifier resolutions that import sites asked for,
   - the distinct specifiers for each file,
   - the resolver calls,
@@ -64,10 +282,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `cognitive`, `cyclomatic` and `line_count` from the static analysis.
 
   On the `cognitive` basis, the work per call is the cognitive complexity,
-  with a minimum of 1. Compare `cost_score` only between hot paths with the
-  same `cost_basis`. A hot path with no static function to join with has no
-  block, and the `optimization_target_unmatched` warning gives the count of
-  these hot paths in the output. The human output, `--explain` and the MCP
+  with a minimum of 1. The human output shows `(counted as 1)` for a
+  function with cognitive complexity 0. Compare `cost_score` only between
+  hot paths with the same `cost_basis`. A hot path has no block when it has
+  no `stable_id`, or when no static function matches its `stable_id`. The
+  `optimization_target_unmatched` warning gives the count of these hot
+  paths in the output and names both causes. For a script without a source
+  map, the V8 function name must agree with the static function name, else
+  the hot path uses the `cognitive` basis. The block counts of one such
+  script are kept once per function, not once per dump, so memory does not
+  grow with the number of dumps. The human output, `--explain` and the MCP
   `get_hot_paths` tool show the same fields. Cloud hot paths from
   `coverage analyze --cloud` use the cognitive basis.
 - **`fallow list --entry-weight` reports the startup import weight.** For
@@ -83,7 +307,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the packages on the startup path and the single imports that each keep
   the most bytes eager. The unit is source bytes on disk. Types and
   comments count, and tree shaking does not apply, so the value is not a
-  bundle size. The output is human or JSON (`entry_weight` in
+  bundle size. An import without the `type` keyword counts as eager, even
+  when it brings in only types that TypeScript removes. Thus `eager_bytes`
+  can be higher than the code that really loads. The output is human or JSON (`entry_weight` in
   `fallow list --format json`). The health score does not change.
 - **An opt-in regression gate for the startup import weight.**
   `fallow list --entry-weight --save-regression-baseline <PATH>` writes the
@@ -106,8 +332,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bit (`2`) for an edge that loads its target lazily. The focus view draws
   such an edge with a short dash.
 
-### Performance
+- **Built-in Waku plugin.** The `waku` plugin activates from the `waku`
+  dependency and follows the managed-mode file router. Every module under
+  `<srcDir>/pages` is an entry, except modules in `_components`, `_hooks`
+  and `_actions` folders, which the router skips. Route files are credited
+  `default` and `getConfig`, and `_api/` routes also the HTTP method
+  handlers. `<srcDir>/middleware/*` and `<srcDir>/waku.{server,client}` are
+  entries with a used `default` export, and the generated
+  `<srcDir>/pages.gen.ts` is kept. The plugin reads `srcDir` from
+  `waku.config.*` (default `src`). Remove manual `src/pages/**` entries: they
+  credit every export, so a typo such as `getconfig` goes unreported under
+  `includeEntryExports`. Thanks
+  [@aheissenberger](https://github.com/aheissenberger) for the contribution
+  ([#2921](https://github.com/fallow-rs/fallow/pull/2921)).
 
+### Performance
+- **Import resolution runs once for each specifier in a file.** Fallow keeps
+  one import entry for each binding, so `import { a, b, c } from './x'`
+  resolved `./x` three times. The first result now serves the other bindings
+  of the same file. On `editors/vscode`, the resolver calls went from 1355 to
+  499. The findings do not change.
+- **Stylesheets mask comments once.** The dead-code parse of a CSS file masked
+  its comments two times, and three times for a CSS module. `health --css`
+  masked a Tailwind stylesheet up to four times, once for each token scan.
+  Each path now masks a stylesheet one time. The findings do not change.
+- **Token scanners find line numbers in one pass.** The `health --css` token
+  consumer index counted the newlines before each class-shaped token again
+  from the start of the file, so a large file cost time in the square of its
+  size. The `@apply` scan did the same for each directive. Both scans now
+  count lines as they move through the file, and the tokens of one file
+  share one path string.
+- **Runtime coverage remaps source-mapped scripts in linear time.** The
+  source map remap converted each V8 UTF-16 offset to a byte offset with a
+  walk from the start of the script. It did this two times for each function.
+  Fallow now indexes each script one time, and each lookup is a binary search.
+  An ASCII script needs no index.
+- **`fallow flags` parses each file once with a custom `flags` config.**
+  Before, `sdkPatterns`, `envPrefixes` or `configObjectHeuristics` made the
+  command read and parse every file a second time, also on a warm cache. Now
+  the parse applies the custom patterns, and the parse cache keys on them. A
+  change to the `flags` section makes the next run parse every file again.
+- **`fallow flags` matches guarded flags to unused exports by file and
+  line.** Before, it compared each guarded flag with every unused export and
+  unused type in the project. The `dead_code_overlap` output does not change.
 - **A run without a diff starts one git process less.** Every command
   resolved the diff base directories at startup with `git rev-parse`, also
   when no `--diff-file`, `--diff-stdin` or `FALLOW_DIFF_FILE` was set. Fallow
@@ -180,17 +447,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seen. A change to a config input loads the session again. Config inputs
   are `package.json`, lockfiles, `pnpm-workspace.yaml`, `deno.json`,
   `tsconfig` files, the Fallow config file, and each file that the Fallow
-  config extends. A run compares the Fallow config file and its `extends`
-  targets with the disk, so this also works for a `configPath` file with any
-  name. On a platform without a file change time, such as Windows, each run
-  reads the persisted parse cache as before. The server writes the parse
-  cache at shutdown. Reuse needs a client that registers watched files. Set
-  `FALLOW_LSP_REUSE_SESSION=0` to load a new session on each run. On the
-  Next.js repository (about 21,600 source files), one kept session holds
-  about 100 MB to 330 MB of memory between saves.
+  config extends. External plugin files, rule packs, and the folders that
+  a boundary `autoDiscover` entry lists are also config inputs. A run
+  compares these files and folders with the disk, so this also works for a
+  `configPath` file, a `plugins` file or a rule pack with any name. On a
+  platform without a file change time, such as Windows, each run reads the
+  persisted parse cache as before. The server writes the parse cache at
+  shutdown. Reuse needs a client that registers watched files. Set
+  `FALLOW_LSP_REUSE_SESSION=0` to load a new session on each run.
+  A kept session costs memory. On the Next.js repository (about 21,600
+  source files), one kept session holds about 100 MB to 330 MB between
+  saves. The server keeps sessions only while their estimated memory is at
+  most 512 MB in total, the same limit as the parsed-module store of the
+  MCP server. The estimate is 12 bytes for each source byte, plus a fixed
+  size for each file. Over the limit, each run loads its session as before.
 
 ### Changed
 
+- **`fallow flags` gives `medium` confidence to generic SDK names without
+  a flag import.** This changes existing JSON values. The names
+  `isEnabled`, `getValue` and `useFeature` also occur in libraries that
+  are not flag SDKs, such as form libraries. Before, a call to one of
+  these names always had `confidence: "high"`. Now the call has
+  `confidence: "medium"` when its file imports no flag SDK and no flag
+  module. A flag SDK or a flag module is an import or a top-level
+  `require` whose source contains `flag`, `feature` or `toggle`. A source
+  that contains the name of a known vendor, such as
+  `@unleash/proxy-client-react`, also counts. Other SDK names, such as
+  `useFlag` and `checkGate`, keep `high` confidence.
+  To keep `high` confidence for your own `isEnabled`, add the name to
+  `flags.sdkPatterns`. The parse cache version changes, so the first run
+  after the upgrade parses every file again.
+- **`fallow flags` reports `config.features.x` as one read.** With
+  `flags.configObjectHeuristics` on, the scan reported the full access
+  `features.x` and also the object `config.features`. Now it reports only
+  the full access. So an entry such as `process.features` from
+  `process.features.typescript` no longer shows in the output.
 - **Oxc 0.151.** The parser and AST crates move from Oxc 0.126 to 0.151, and
   `oxc_coverage_instrument` moves to 0.13. The findings do not change: the
   dead-code, duplication and health output of public projects is the same as
@@ -253,6 +545,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   definition, which also matches `*.e2e-spec.*` and `*.cy.*` files. The
   whole skip list ignores ASCII case, so `Examples/` and
   `Button.Stories.tsx` are also skipped.
+- **`.cy.` files and `spec/` directories need more evidence to be tests.**
+  `.cy.` is also the Welsh language code, so a locale file such as
+  `src/i18n/strings.cy.ts` counted as a test. A `.cy.` file is now a test
+  only when it is a script file below a `cypress` directory. A script file
+  below a directory with a Cypress config or a `cypress` directory also
+  counts. A `spec` or `specs` directory now holds tests only at a test root.
+  A test root is the project root, a package root, or a directory with a
+  `src` or `lib` directory next to `spec`. Thus a `src/spec/` module is
+  production code. The change applies to every user of the shared test-path
+  definition: health hotspots, the human split, the combined run, audit,
+  `similar-code inspect` and `flags --retirement`.
+- **A plain `fallow list` ignores the `--tolerance` value.** Only the
+  `--entry-weight` regression gate reads `--tolerance`. Before, `fallow list`
+  parsed the value on every run, so an invalid value exited 2 for a plain
+  listing. Now `fallow list` parses the value only for `--entry-weight`.
+- **The CVA checks read a project inside a test directory.** The CVA
+  duplicate-variant and token-drift checks skipped test files with a match
+  on the absolute path. Thus a project inside a `test` or `tests` directory
+  lost every CVA finding. The checks now use the shared test-path
+  definition relative to the project root. They also skip the other test
+  paths of that definition, such as mocks, fixtures and `e2e/` directories.
+
+- **pnpm overrides in a two-document lockfile are no longer unused.** When
+  `package.json` sets `packageManager`, pnpm 12 writes `pnpm-lock.yaml` as
+  two YAML documents. The first document holds the package manager
+  environment. The second document holds the project packages. Fallow could
+  not read this lockfile, so it reported a pnpm override as an unused
+  dependency override. Fallow now reads each project document of the
+  lockfile. It ignores the package manager environment, because pnpm does
+  not apply overrides to it. Thanks [@sgaabdu4](https://github.com/sgaabdu4)
+  for the report.
+  (Closes [#2909](https://github.com/fallow-rs/fallow/issues/2909))
+- **On Windows, plugin path rules skip the directories they exclude.** A
+  plugin can exclude files by a path segment, such as the TanStack Router
+  `routeFileIgnorePattern`. On Windows the check did not split paths on the
+  native separator, so an excluded route file was still an entry point. The
+  new Waku plugin skips `_components`, `_hooks` and `_actions` the same way
+  on every platform.
+
 
 - **GitLab reviews no longer post the same inline comment on every
   pipeline.** GitLab removes discussions the token may not see after it
@@ -10486,7 +10817,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--changed-since` and `--fail-on-issues` for CI
 - Cross-workspace resolution for npm/yarn/pnpm workspaces
 
-[unreleased]: https://github.com/fallow-rs/fallow/compare/v3.29.0...HEAD
+[unreleased]: https://github.com/fallow-rs/fallow/compare/v3.30.0...HEAD
+[3.30.0]: https://github.com/fallow-rs/fallow/compare/v3.29.0...v3.30.0
 [3.29.0]: https://github.com/fallow-rs/fallow/compare/v3.28.0...v3.29.0
 [3.28.0]: https://github.com/fallow-rs/fallow/compare/v3.27.0...v3.28.0
 [3.27.0]: https://github.com/fallow-rs/fallow/compare/v3.26.0...v3.27.0

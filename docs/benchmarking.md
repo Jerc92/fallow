@@ -60,11 +60,19 @@ A benchmark measures a code path in process. Two `--performance` fields
 measure a whole CLI run, and they need no benchmark harness:
 
 - `counters` holds exact work counts for a dead-code run: source files and
-  bytes read, parse cache bytes read, specifier resolutions and distinct
-  specifiers, resolver calls and canonicalize calls. These counts do not
-  change with the thread count or the machine, so compare two runs with
-  exact equality. A ratio of `resolve_specifier_calls` to `unique_specifiers`
-  above 1.0 is repeated resolution work.
+  bytes read, parse cache bytes read, bytes through the CSS comment mask,
+  specifier resolutions and distinct specifiers, resolver calls and
+  canonicalize calls. These counts do not change with the thread count or
+  the machine, so compare two runs with exact equality. A ratio of
+  `resolve_specifier_calls` to `unique_specifiers` above 1.0 shows bindings
+  that share a specifier. The resolver runs at most once for each distinct
+  specifier in a file. A specifier that returns before the resolver, such as
+  an external URL, an `npm:` or `jsr:` specifier or a static directory
+  mapping, makes no resolver call. Thus `oxc_resolve_calls` minus
+  `unique_specifiers` is a net value: the fallback calls are at least this
+  difference. The parse masks the comments of
+  each stylesheet once, so `css_masked_bytes` is equal to the size of the
+  parsed stylesheets. A higher value shows a repeated mask.
 - The health timings hold `git_log_bytes`. This count also changes with the
   churn window and the date, because commits move out of a relative window.
   Compare it only for runs on the same day with the same window.
@@ -88,6 +96,69 @@ this reason.
 pinned number only when the work changed on purpose, and give the reason in the
 commit. Drift invariant I9 checks that the counters do not depend on the
 thread count.
+
+## Allocation guard
+
+`.github/workflows/allocs.yml` runs `crates/core/benches/allocations.rs`
+under dhat and records four counts: total bytes, total blocks, peak bytes and
+peak blocks. The fixture has multi-binding and type-only imports, barrel files
+with named, type and star re-exports, a namespace import, a global stylesheet
+with an `@import`, a CSS module with an unused class and one Vue single-file
+component. The bench asserts that these paths still produce their findings,
+so a fixture that stops reaching a path fails the run instead of showing lower
+counts.
+
+The workflow sets `RAYON_NUM_THREADS=1`. With one thread the counts differ
+between runs by less than 0.02%, so the alert threshold is 101%. With four
+threads the peak bytes differ by more than 1% between runs.
+`scripts/check-benchmark-harness.py` rejects the workflow without the
+variable. Run the bench locally with the same variable:
+
+```bash
+RAYON_NUM_THREADS=1 cargo bench -p fallow-core --bench allocations
+```
+
+## Whole-binary instruction counts
+
+The Criterion shards measure code paths in process. They do not see process
+startup, config loading, the report output or the interaction between stages.
+`.github/workflows/bench-cli-instructions.yml` runs the release binary under
+CodSpeed CPU simulation with the exec harness, so each run of the whole CLI
+gets an instruction-based value:
+
+- Projects: preact, zod and vue-core, each at a pinned commit.
+- Commands: `dead-code` and `audit --base HEAD~1`.
+- Cache states: cold (`--no-cache`) and warm (a cache that the prepare step
+  fills).
+
+`benchmarks/cli-instructions.sh` owns the corpus and the benchmark list. It
+passes `--threads 1`, because the CLI does not read `RAYON_NUM_THREADS`. It
+also passes a config that changes each `error` rule to `warn`, because the
+exec harness rejects a non-zero exit. The config does not change the analysis
+work. The action sets `cycle-estimation: false`, so each instruction has the
+same cost and the value follows the instruction count.
+
+The simulation does not count the child processes, for example `git` in
+`audit`, or the time in system calls. The same job records the `--performance`
+work counters of each `dead-code` run on the `cli-counters` chart, with an
+alert at 101%.
+
+Under callgrind with one thread, the instruction count of each benchmark
+differed by less than 0.1% between runs. A regression threshold of 2% is safe.
+
+The job needs a release build, so it does not run on every push. It runs once
+a day on main and on a pull request with the `ci:perf` label. Run the same
+steps locally on Linux:
+
+```bash
+cargo build --release -p fallow-cli
+benchmarks/cli-instructions.sh prepare --fallow-bin target/release/fallow
+benchmarks/cli-instructions.sh commands --fallow-bin target/release/fallow
+```
+
+Each line of `commands` gives a benchmark name and its command. Run a command
+under `valgrind --tool=callgrind` to get its instruction count. Valgrind is
+not available on macOS.
 
 ## Shards
 
