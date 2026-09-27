@@ -3425,6 +3425,21 @@ impl<'a> Visit<'a> for ModuleInfoExtractor {
         walk::walk_export_all_declaration(self, decl);
     }
 
+    fn visit_await_expression(&mut self, expr: &AwaitExpression<'a>) {
+        // A module-level `await import('./x')` holds module evaluation until
+        // the target has loaded, so the target loads eagerly, like a static
+        // import. Inside a function the import runs on demand. The top level
+        // of a component body (Vue `<script setup>`, Svelte instance script,
+        // Astro frontmatter) is a function after compilation, so it is lazy.
+        if self.function_depth == 0
+            && !self.top_level_is_component_body
+            && let Expression::ImportExpression(import_expr) = expr.argument.without_parentheses()
+        {
+            self.mark_import_load_kind(import_expr.span, ImportLoadKind::Static);
+        }
+        walk::walk_await_expression(self, expr);
+    }
+
     fn visit_import_expression(&mut self, expr: &ImportExpression<'a>) {
         if self.handled_import_spans.contains(&expr.span) {
             walk::walk_import_expression(self, expr);
